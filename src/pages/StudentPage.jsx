@@ -296,6 +296,9 @@ export default function StudentPage() {
     );
   }
 
+  // FIXED: Filter out current student from participants
+  const otherParticipants = participants.filter(p => p.id !== studentIdRef.current);
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -436,7 +439,7 @@ export default function StudentPage() {
             cursor: 'pointer',
           }}
         >
-          👥 Participants ({participants.length})
+          👥 Participants ({otherParticipants.length})
         </button>
 
         <button
@@ -556,9 +559,9 @@ export default function StudentPage() {
         {activeTab === 'participants' && (
           <>
             <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
-              Participants ({participants.length})
+              Participants ({otherParticipants.length})
             </h3>
-            {participants.length === 0 ? (
+            {otherParticipants.length === 0 ? (
               <div style={{
                 textAlign: 'center',
                 color: '#9ca3af',
@@ -566,11 +569,11 @@ export default function StudentPage() {
                 fontSize: '14px',
               }}>
                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-                <div>No participants yet</div>
+                <div>No other participants yet</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {participants.map((participant) => (
+                {otherParticipants.map((participant) => (
                   <div
                     key={participant.id}
                     style={{
