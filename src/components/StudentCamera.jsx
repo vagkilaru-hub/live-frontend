@@ -15,21 +15,21 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
   const lookingAwayFrames = useRef(0);
   const attentiveFrames = useRef(0);
 
-  // OPTIMIZED THRESHOLDS - Calibrated to reference images
+  // FINAL OPTIMIZED THRESHOLDS - Lowered for better detection
   const THRESHOLDS = {
     // Eye Detection (for drowsiness)
-    EYE_CLOSED: 0.10,        // Very low = eyes must be REALLY closed
+    EYE_CLOSED: 0.10,        // Eyes must be REALLY closed
     EYE_OPEN: 0.18,          // Clear threshold for open eyes
-    DROWSY_FRAMES: 12,       // 4 seconds of closed eyes = drowsy (3 fps)
+    DROWSY_FRAMES: 12,       // 4 seconds of closed eyes = drowsy
     
-    // Head Pose Detection (for looking away)
-    HEAD_YAW_EXTREME: 50,    // Profile view (like Image 4) = looking away
-    HEAD_YAW_MODERATE: 30,   // Slightly turned but still acceptable
+    // Head Pose Detection (for looking away) - LOWERED THRESHOLDS
+    HEAD_YAW_EXTREME: 25,    // Profile view = looking away (was 50, now 25)
+    HEAD_YAW_MODERATE: 15,   // Moderate turn (was 30, now 15)
     HEAD_PITCH_DOWN: 20,     // Looking down threshold
     HEAD_PITCH_UP: 20,       // Looking up threshold
     
     // Frame consistency
-    LOOKING_AWAY_FRAMES: 9,  // 3 seconds of head turn = looking away
+    LOOKING_AWAY_FRAMES: 6,  // 2 seconds of head turn = looking away (was 9, now 6)
     ATTENTIVE_FRAMES: 6,     // 2 seconds of good posture = attentive
   };
 
@@ -39,7 +39,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
     const initializeCamera = async () => {
       try {
-        console.log('🎥 Starting OPTIMIZED detection (calibrated to reference)...');
+        console.log('🎥 Starting FINAL OPTIMIZED detection...');
         
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
@@ -60,7 +60,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
           videoRef.current.onloadedmetadata = async () => {
             try {
               await videoRef.current.play();
-              console.log('✅ Camera started with REFERENCE-CALIBRATED detection');
+              console.log('✅ Camera started - FINAL DETECTION ACTIVE');
               setIsActive(true);
               
               await initializeMediaPipeDetection();
@@ -80,7 +80,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
     const initializeMediaPipeDetection = async () => {
       try {
-        console.log('🧠 Initializing MediaPipe (REFERENCE MODE)...');
+        console.log('🧠 Initializing MediaPipe (FINAL MODE)...');
         
         const { faceMesh, camera } = await initializeMediaPipe(
           videoRef.current,
@@ -88,7 +88,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         );
         
         mediaPipeRef.current = { faceMesh, camera };
-        console.log('✅ Detection calibrated to reference images');
+        console.log('✅ FINAL detection calibrated and ready');
         
       } catch (error) {
         console.error('❌ MediaPipe initialization failed:', error);
@@ -122,37 +122,30 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         Current: statusRef.current
       });
 
-      // PRIORITY 1: Check for DROWSINESS (Image 6 - eyes closed, face forward)
-      // Eyes must be REALLY closed to trigger drowsy
+      // PRIORITY 1: Check for DROWSINESS
       if (eye_aspect_ratio < THRESHOLDS.EYE_CLOSED) {
         eyeClosedFrames.current++;
         
-        // Only trigger drowsy after sustained eye closure
         if (eyeClosedFrames.current >= THRESHOLDS.DROWSY_FRAMES) {
-          console.log('😴 DROWSY DETECTED - Eyes closed for', (eyeClosedFrames.current / 3).toFixed(1), 'seconds');
+          console.log('😴 DROWSY - Eyes closed for', (eyeClosedFrames.current / 3).toFixed(1), 'sec');
           lookingAwayFrames.current = 0;
           attentiveFrames.current = 0;
           return { status: 'drowsy', confidence: 0.95 };
         } else {
-          // Eyes closing but not long enough - maintain current state
-          console.log('⏳ Eyes closing... ' + eyeClosedFrames.current + '/' + THRESHOLDS.DROWSY_FRAMES);
+          console.log('⏳ Eyes closing...', eyeClosedFrames.current, '/', THRESHOLDS.DROWSY_FRAMES);
           return { status: statusRef.current, confidence: 0.7 };
         }
       } else if (eye_aspect_ratio > THRESHOLDS.EYE_OPEN) {
-        // Eyes are clearly open - reset drowsy counter
         eyeClosedFrames.current = 0;
       }
 
-      // PRIORITY 2: Check for LOOKING AWAY (Image 4 - head turned to side)
-      // Use absolute values to detect turns in either direction
+      // PRIORITY 2: Check for LOOKING AWAY - LOWERED THRESHOLDS
       const absYaw = Math.abs(head_pose.yaw);
       const absPitch = Math.abs(head_pose.pitch);
       
-      // Extreme head turn (profile view like Image 4) = definitely looking away
-      const isProfileView = absYaw > THRESHOLDS.HEAD_YAW_EXTREME;
-      
-      // Moderate head turn + looking up/down = looking away
-      const isModeratelyTurned = absYaw > THRESHOLDS.HEAD_YAW_MODERATE;
+      // More sensitive detection with lower thresholds
+      const isProfileView = absYaw > THRESHOLDS.HEAD_YAW_EXTREME;  // 25° instead of 50°
+      const isModeratelyTurned = absYaw > THRESHOLDS.HEAD_YAW_MODERATE;  // 15° instead of 30°
       const isLookingUpOrDown = absPitch > THRESHOLDS.HEAD_PITCH_DOWN;
       
       const isLookingAway = isProfileView || (isModeratelyTurned && isLookingUpOrDown);
@@ -162,38 +155,32 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         attentiveFrames.current = 0;
         
         if (lookingAwayFrames.current >= THRESHOLDS.LOOKING_AWAY_FRAMES) {
-          console.log('👀 LOOKING AWAY - Yaw: ' + head_pose.yaw + '° Pitch: ' + head_pose.pitch + '° (' + (lookingAwayFrames.current / 3).toFixed(1) + 's)');
+          console.log('👀 LOOKING AWAY - Yaw:', head_pose.yaw + '° Pitch:', head_pose.pitch + '° (' + (lookingAwayFrames.current / 3).toFixed(1) + 's)');
           eyeClosedFrames.current = 0;
           return { status: 'looking_away', confidence: 0.90 };
         } else {
-          // Head turning but not sustained yet
-          console.log('⏳ Head turning... ' + lookingAwayFrames.current + '/' + THRESHOLDS.LOOKING_AWAY_FRAMES);
+          console.log('⏳ Head turning...', lookingAwayFrames.current, '/', THRESHOLDS.LOOKING_AWAY_FRAMES);
           return { status: statusRef.current, confidence: 0.75 };
         }
       } else {
-        // Head is facing forward - reset looking away counter
         lookingAwayFrames.current = 0;
       }
 
-      // PRIORITY 3: ATTENTIVE (Image 5 - face forward, eyes open)
-      // Student is looking at camera with eyes open
+      // PRIORITY 3: ATTENTIVE
       if (eyeClosedFrames.current === 0 && lookingAwayFrames.current === 0) {
         attentiveFrames.current++;
         
-        // Need sustained good behavior before confirming attentive
         if (attentiveFrames.current >= THRESHOLDS.ATTENTIVE_FRAMES) {
           if (statusRef.current !== 'attentive') {
-            console.log('✅ ATTENTIVE - Face forward, eyes open for ' + (attentiveFrames.current / 3).toFixed(1) + 's');
+            console.log('✅ ATTENTIVE - Face forward, eyes open for', (attentiveFrames.current / 3).toFixed(1), 's');
           }
           return { status: 'attentive', confidence: 0.95 };
         } else {
-          // Transitioning to attentive
-          console.log('⏳ Returning to attentive... ' + attentiveFrames.current + '/' + THRESHOLDS.ATTENTIVE_FRAMES);
+          console.log('⏳ Returning to attentive...', attentiveFrames.current, '/', THRESHOLDS.ATTENTIVE_FRAMES);
           return { status: statusRef.current, confidence: 0.80 };
         }
       }
 
-      // Default: maintain current status
       return { status: statusRef.current, confidence: 0.70 };
     };
 
@@ -207,7 +194,6 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         statusRef.current = newStatus;
         setStatus(newStatus);
         
-        // Reset counters when status changes
         if (newStatus === 'attentive') {
           eyeClosedFrames.current = 0;
           lookingAwayFrames.current = 0;
@@ -219,7 +205,6 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
           attentiveFrames.current = 0;
         }
         
-        // Send to server
         if (onStatusChange) {
           onStatusChange({
             status: newStatus,
@@ -243,24 +228,16 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw mirrored video
       ctx.save();
       ctx.scale(-1, 1);
       ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
       ctx.restore();
 
-      // Draw face landmarks
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
         
-        // Draw key facial points
         ctx.fillStyle = '#00FF00';
-        const keyPoints = [
-          1,    // Nose tip
-          33, 133,  // Left eye
-          362, 263, // Right eye
-          152   // Chin
-        ];
+        const keyPoints = [1, 33, 133, 362, 263, 152];
 
         keyPoints.forEach(idx => {
           const point = landmarks[idx];
@@ -272,7 +249,6 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
           ctx.fill();
         });
 
-        // Draw face oval outline
         ctx.strokeStyle = '#00FF0088';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -312,7 +288,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
     return () => {
       mounted = false;
-      console.log('🛑 Stopping optimized detection');
+      console.log('🛑 Stopping detection');
       
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current);
@@ -367,7 +343,6 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         }}
       />
       
-      {/* Status Bar */}
       <div style={{
         position: 'absolute',
         bottom: '0',
@@ -384,7 +359,6 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         {getStatusText()}
       </div>
 
-      {/* Detection Info */}
       <div style={{
         position: 'absolute',
         top: '8px',
@@ -397,10 +371,9 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         fontFamily: 'monospace',
         fontWeight: 'bold',
       }}>
-        Detections: {detectionCount} | {isActive ? '🎯 OPTIMIZED' : '⏳ Loading...'}
+        Detections: {detectionCount} | {isActive ? '🚀 FINAL' : '⏳ Loading...'}
       </div>
 
-      {/* Loading Overlay */}
       {!isActive && (
         <div style={{
           position: 'absolute',
@@ -426,7 +399,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
             borderRadius: '50%',
             animation: 'spin 1s linear infinite',
           }} />
-          <div>Starting optimized AI...</div>
+          <div>Starting AI detection...</div>
           <style>{`
             @keyframes spin {
               0% { transform: rotate(0deg); }

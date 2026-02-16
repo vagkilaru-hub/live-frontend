@@ -111,11 +111,10 @@ export function extractAttentionFeatures(results) {
     
     // Key landmarks for head pose estimation
     const NOSE_TIP = 1;
-    const NOSE_BRIDGE = 168;
     const LEFT_EYE_OUTER = 33;
     const RIGHT_EYE_OUTER = 263;
-    const LEFT_MOUTH = 61;
-    const RIGHT_MOUTH = 291;
+    const LEFT_EYE_INNER = 133;
+    const RIGHT_EYE_INNER = 362;
     const CHIN = 152;
     const FOREHEAD = 10;
 
@@ -140,65 +139,61 @@ export function extractAttentionFeatures(results) {
     const rightEAR = calculateEAR(RIGHT_EYE);
     const ear = (leftEAR + rightEAR) / 2;
 
-    // IMPROVED HEAD POSE CALCULATION using facial geometry
+    // ROBUST HEAD POSE CALCULATION - Multiple methods combined
     function calculateHeadPose() {
         const noseTip = landmarks[NOSE_TIP];
-        const noseBridge = landmarks[NOSE_BRIDGE];
-        const leftEye = landmarks[LEFT_EYE_OUTER];
-        const rightEye = landmarks[RIGHT_EYE_OUTER];
-        const leftMouth = landmarks[LEFT_MOUTH];
-        const rightMouth = landmarks[RIGHT_MOUTH];
+        const leftEyeOuter = landmarks[LEFT_EYE_OUTER];
+        const rightEyeOuter = landmarks[RIGHT_EYE_OUTER];
+        const leftEyeInner = landmarks[LEFT_EYE_INNER];
+        const rightEyeInner = landmarks[RIGHT_EYE_INNER];
         const chin = landmarks[CHIN];
         const forehead = landmarks[FOREHEAD];
 
-        // Calculate face width (distance between eyes)
-        const faceWidth = Math.hypot(
-            rightEye.x - leftEye.x,
-            rightEye.y - leftEye.y,
-            (rightEye.z || 0) - (leftEye.z || 0)
-        );
-
-        // Calculate face center
-        const centerX = (leftEye.x + rightEye.x) / 2;
-        const centerY = (leftEye.y + rightEye.y) / 2;
-
-        // YAW (left-right rotation) - using nose position relative to face center
-        // When looking straight: nose should be centered
-        // When turned left: nose shifts left, when turned right: nose shifts right
-        const noseOffsetX = noseTip.x - centerX;
-        const yaw = Math.round((noseOffsetX / faceWidth) * 180);  // Convert to degrees
-
-        // PITCH (up-down rotation) - using nose-to-forehead distance
-        const faceHeight = Math.hypot(
-            forehead.x - chin.x,
-            forehead.y - chin.y,
-            (forehead.z || 0) - (chin.z || 0)
-        );
+        // METHOD 1: Eye asymmetry (most reliable for profile detection)
+        const leftEyeWidth = Math.abs(leftEyeOuter.x - leftEyeInner.x);
+        const rightEyeWidth = Math.abs(rightEyeOuter.x - rightEyeInner.x);
         
-        const noseOffsetY = noseTip.y - centerY;
-        const pitch = Math.round((noseOffsetY / faceHeight) * 120);  // Convert to degrees
+        // When head turns left: left eye gets smaller
+        // When head turns right: right eye gets smaller
+        const eyeAsymmetry = (rightEyeWidth - leftEyeWidth) / (rightEyeWidth + leftEyeWidth + 0.001);
+        const yawFromEyes = Math.round(eyeAsymmetry * 200); // Amplify the signal
 
-        // ALTERNATIVE YAW using eye asymmetry (more robust for profile views)
-        // When face is turned, one eye appears smaller/farther
-        const leftEyeWidth = Math.hypot(
-            landmarks[33].x - landmarks[133].x,
-            landmarks[33].y - landmarks[133].y
-        );
-        const rightEyeWidth = Math.hypot(
-            landmarks[362].x - landmarks[263].x,
-            landmarks[362].y - landmarks[263].y
-        );
+        // METHOD 2: Nose position relative to eye center
+        const eyeCenterX = (leftEyeOuter.x + rightEyeOuter.x) / 2;
+        const faceWidth = Math.abs(rightEyeOuter.x - leftEyeOuter.x);
+        const noseOffset = (noseTip.x - eyeCenterX) / (faceWidth + 0.001);
+        const yawFromNose = Math.round(noseOffset * 150);
+
+        // METHOD 3: Face width asymmetry
+        const leftSideWidth = Math.abs(noseTip.x - leftEyeOuter.x);
+        const rightSideWidth = Math.abs(rightEyeOuter.x - noseTip.x);
+        const sideAsymmetry = (rightSideWidth - leftSideWidth) / (rightSideWidth + leftSideWidth + 0.001);
+        const yawFromSides = Math.round(sideAsymmetry * 180);
+
+        // Combine all methods - use the strongest signal
+        const yawValues = [yawFromEyes, yawFromNose, yawFromSides];
+        const maxAbsYaw = yawValues.reduce((max, val) => 
+            Math.abs(val) > Math.abs(max) ? val : max, 0);
         
-        const eyeRatio = rightEyeWidth / (leftEyeWidth + 0.001);  // Avoid division by zero
-        const yawFromEyes = Math.round((eyeRatio - 1) * 100);
+        const finalYaw = maxAbsYaw;
 
-        // Use the stronger signal
-        const finalYaw = Math.abs(yawFromEyes) > Math.abs(yaw) ? yawFromEyes : yaw;
+        // PITCH calculation (up-down)
+        const faceHeight = Math.abs(forehead.y - chin.y);
+        const eyeCenterY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
+        const noseOffsetY = (noseTip.y - eyeCenterY) / (faceHeight + 0.001);
+        const pitch = Math.round(noseOffsetY * 100);
+
+        console.log('🔍 Yaw calculations:', {
+            eyes: yawFromEyes + '°',
+            nose: yawFromNose + '°', 
+            sides: yawFromSides + '°',
+            final: finalYaw + '°'
+        });
 
         return {
             pitch: pitch,
             yaw: finalYaw,
-            roll: 0  // Not critical for this application
+            roll: 0
         };
     }
 
@@ -212,7 +207,7 @@ export function extractAttentionFeatures(results) {
     const gazeX = ((leftIris.x + rightIris.x) / 2) - noseTip.x;
     const gazeY = ((leftIris.y + rightIris.y) / 2) - noseTip.y;
 
-    console.log('🎯 Head Pose:', {
+    console.log('🎯 Head Pose FINAL:', {
         yaw: head_pose.yaw + '°',
         pitch: head_pose.pitch + '°',
         EAR: ear.toFixed(3)
