@@ -7,6 +7,7 @@ export class WebSocketManager {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 3000;
         this.heartbeatInterval = null;
+        this.shouldReconnect = true; // ADD THIS LINE
     }
 
     connect() {
@@ -15,7 +16,7 @@ export class WebSocketManager {
                 this.ws = new WebSocket(this.url);
 
                 this.ws.onopen = () => {
-                    console.log('WebSocket connected');
+                    console.log('✅ WebSocket connected');
                     this.reconnectAttempts = 0;
                     this.startHeartbeat();
                     resolve();
@@ -28,19 +29,21 @@ export class WebSocketManager {
                             this.onMessage(data);
                         }
                     } catch (err) {
-                        console.error('Error parsing message:', err);
+                        console.error('❌ Error parsing message:', err);
                     }
                 };
 
                 this.ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+                    console.error('❌ WebSocket error:', error);
                     reject(error);
                 };
 
                 this.ws.onclose = () => {
-                    console.log('WebSocket disconnected');
+                    console.log('🔌 WebSocket disconnected');
                     this.stopHeartbeat();
-                    this.attemptReconnect();
+                    if (this.shouldReconnect) { // ADD THIS CHECK
+                        this.attemptReconnect();
+                    }
                 };
             } catch (err) {
                 reject(err);
@@ -66,7 +69,7 @@ export class WebSocketManager {
     attemptReconnect() {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
+            console.log(`🔄 Reconnecting... Attempt ${this.reconnectAttempts}`);
             setTimeout(() => {
                 this.connect().catch(console.error);
             }, this.reconnectDelay);
@@ -78,10 +81,13 @@ export class WebSocketManager {
             this.ws.send(JSON.stringify(data));
             return true;
         }
+        console.warn('⚠️ Cannot send - WebSocket not connected');
         return false;
     }
 
     disconnect() {
+        console.log('🛑 Disconnecting WebSocket...');
+        this.shouldReconnect = false; // ADD THIS LINE - Stop auto-reconnect
         this.stopHeartbeat();
         if (this.ws) {
             this.ws.close();

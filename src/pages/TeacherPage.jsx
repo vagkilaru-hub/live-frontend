@@ -95,6 +95,7 @@ export default function TeacherPage() {
         console.log('🚨🚨🚨 ALERT RECEIVED FROM BACKEND:', message.data);
 
         setAlerts(prev => {
+          // Check if alert already exists for this student
           const exists = prev.some(a => a.student_id === message.data.student_id);
 
           if (exists) {
@@ -141,6 +142,7 @@ export default function TeacherPage() {
         break;
 
       default:
+        console.log('Unknown message type:', message.type);
         break;
     }
   }, []);
@@ -184,7 +186,7 @@ export default function TeacherPage() {
     };
   }, [handleWebSocketMessage]);
 
-  // Force re-render when alerts change
+  // Debug logging when alerts change
   useEffect(() => {
     console.log('🔄 ALERTS STATE UPDATED:', alerts.length, 'alerts');
     alerts.forEach((alert, index) => {
@@ -192,6 +194,7 @@ export default function TeacherPage() {
     });
   }, [alerts]);
 
+  // Update stats when students change
   useEffect(() => {
     const total = students.length;
     const attentive = students.filter(s => s.status === 'attentive').length;
@@ -222,7 +225,7 @@ export default function TeacherPage() {
   };
 
   const handleLeaveClass = () => {
-    if (confirm('End class for all students?')) {
+    if (window.confirm('End class for all students?')) {
       if (wsRef.current) wsRef.current.disconnect();
       navigate('/');
     }
@@ -826,7 +829,7 @@ export default function TeacherPage() {
                         {getSeverityIcon(alert.severity)} {alert.student_name}
                       </div>
                       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                        {alert.alert_type === 'drowsy' ? 'drowsy' : 'distracted'}
+                        {alert.alert_type === 'drowsy' ? 'Drowsy' : 'Distracted'}
                       </div>
                     </div>
                     <div style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>

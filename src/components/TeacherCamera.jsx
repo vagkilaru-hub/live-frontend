@@ -1,218 +1,167 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function TeacherCamera({ onClose, wsManager }) {
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
-    const [isActive, setIsActive] = useState(false);
-    const streamRef = useRef(null);
-    const frameIntervalRef = useRef(null);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [error, setError] = useState(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
 
-    useEffect(() => {
-        async function startCamera() {
-            try {
-                console.log('🎥 Starting teacher camera...');
+  useEffect(() => {
+    startCamera();
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 640 },
-                        height: { ideal: 480 },
-                        facingMode: 'user'
-                    },
-                    audio: false
-                });
+  const startCamera = async () => {
+    try {
+      console.log('📹 Starting teacher camera...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        }, 
+        audio: false 
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setIsCameraOn(true);
+        setError(null);
+        console.log('✅ Teacher camera started');
+      }
+    } catch (error) {
+      console.error('❌ Error accessing camera:', error);
+      setError('Could not access camera. Please check permissions.');
+    }
+  };
 
-                streamRef.current = stream;
+  const stopCamera = () => {
+    if (streamRef.current) {
+      console.log('🛑 Stopping teacher camera...');
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Track stopped:', track.kind);
+      });
+      streamRef.current = null;
+      setIsCameraOn(false);
+    }
+  };
 
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    await videoRef.current.play();
-                    setIsActive(true);
-                    console.log('✅ Teacher camera active');
+  const handleClose = () => {
+    stopCamera();
+    onClose();
+  };
 
-                    // Setup canvas
-                    const canvas = canvasRef.current;
-                    canvas.width = 640;
-                    canvas.height = 480;
-
-                    // Send frames to students every 1 second
-                    frameIntervalRef.current = setInterval(() => {
-                        if (!videoRef.current || videoRef.current.paused) return;
-
-                        try {
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-                            const frameData = canvas.toDataURL('image/jpeg', 0.7);
-
-                            // Send to students via WebSocket
-                            if (wsManager && wsManager.isConnected()) {
-                                wsManager.send({
-                                    type: 'teacher_camera_frame',
-                                    frame: frameData
-                                });
-                            }
-                        } catch (err) {
-                            console.error('Frame capture error:', err);
-                        }
-                    }, 1000);
-                }
-            } catch (err) {
-                console.error('❌ Teacher camera error:', err);
-                alert('Could not access camera. Please allow camera permission.');
-            }
-        }
-
-        startCamera();
-
-        return () => {
-            console.log('🛑 Stopping teacher camera');
-            if (frameIntervalRef.current) {
-                clearInterval(frameIntervalRef.current);
-            }
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-        };
-    }, [wsManager]);
-
-    return (
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2000,
+      padding: '20px',
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        padding: '24px',
+        maxWidth: '800px',
+        width: '100%',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+      }}>
         <div style={{
-            position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            width: '320px',
-            zIndex: 2000,
-            backgroundColor: 'white',
-            borderRadius: '16px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.4)',
-            overflow: 'hidden',
-            border: '3px solid #8b5cf6',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
         }}>
-            {/* Header */}
-            <div style={{
-                padding: '12px 16px',
-                backgroundColor: '#8b5cf6',
-                color: 'white',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>📹</span>
-                    <div>
-                        <div style={{ fontSize: '14px', fontWeight: '600' }}>
-                            My Camera
-                        </div>
-                        <div style={{ fontSize: '11px', opacity: 0.9 }}>
-                            Broadcasting to students
-                        </div>
-                    </div>
-                </div>
-
-                <button
-                    onClick={onClose}
-                    style={{
-                        padding: '6px 12px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        transition: 'background-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
-                >
-                    ✕
-                </button>
-            </div>
-
-            {/* Video */}
-            <div style={{ position: 'relative', backgroundColor: '#000' }}>
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{
-                        width: '100%',
-                        height: 'auto',
-                        transform: 'scaleX(-1)',
-                        display: 'block',
-                    }}
-                />
-
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-                {isActive && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '12px',
-                        left: '12px',
-                        padding: '6px 12px',
-                        backgroundColor: '#22c55e',
-                        color: 'white',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        boxShadow: '0 2px 8px rgba(34, 197, 94, 0.4)',
-                    }}>
-                        <div style={{
-                            width: '6px',
-                            height: '6px',
-                            backgroundColor: 'white',
-                            borderRadius: '50%',
-                            animation: 'pulse 2s ease-in-out infinite',
-                        }} />
-                        LIVE
-                    </div>
-                )}
-
-                {!isActive && (
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                    }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '32px', marginBottom: '8px' }}>📹</div>
-                            Starting...
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Footer */}
-            <div style={{
-                padding: '8px 12px',
-                backgroundColor: '#dcfce7',
-                fontSize: '11px',
-                color: '#166534',
-                textAlign: 'center',
-                fontWeight: '600',
-            }}>
-                ✓ Students see you in their main view
-            </div>
-
-            <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
+          <h2 style={{ 
+            margin: 0, 
+            fontSize: '20px', 
+            fontWeight: '600',
+            color: '#111827',
+          }}>
+            📹 My Camera
+          </h2>
+          <button
+            onClick={handleClose}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+            }}
+          >
+            ✕ Close
+          </button>
         </div>
-    );
+
+        {error ? (
+          <div style={{
+            padding: '40px',
+            backgroundColor: '#fee2e2',
+            borderRadius: '12px',
+            textAlign: 'center',
+            color: '#991b1b',
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+            <div style={{ fontWeight: '600', marginBottom: '8px' }}>{error}</div>
+            <button
+              onClick={startCamera}
+              style={{
+                marginTop: '16px',
+                padding: '8px 16px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '600',
+              }}
+            >
+              Try Again
+            </button>
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%',
+                borderRadius: '12px',
+                backgroundColor: '#000',
+                aspectRatio: '16/9',
+              }}
+            />
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              backgroundColor: isCameraOn ? '#dcfce7' : '#fee2e2',
+              borderRadius: '8px',
+              textAlign: 'center',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: isCameraOn ? '#166534' : '#991b1b',
+            }}>
+              {isCameraOn ? '● Camera is active' : '○ Camera is off'}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
