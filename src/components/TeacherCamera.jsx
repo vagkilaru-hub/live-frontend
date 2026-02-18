@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 export default function TeacherCamera({ onClose, wsManager }) {
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState(null);
+  const [isMinimized, setIsMinimized] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
@@ -54,114 +55,181 @@ export default function TeacherCamera({ onClose, wsManager }) {
     onClose();
   };
 
+  const toggleMinimize = () => {
+    setIsMinimized(!isMinimized);
+  };
+
   return (
     <div style={{
       position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      bottom: isMinimized ? '20px' : '20px',
+      right: '20px',
       zIndex: 2000,
-      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
     }}>
+      {/* Camera Container */}
       <div style={{
         backgroundColor: 'white',
         borderRadius: '16px',
-        padding: '24px',
-        maxWidth: '800px',
-        width: '100%',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+        overflow: 'hidden',
+        width: isMinimized ? '280px' : '400px',
+        transition: 'all 0.3s ease',
       }}>
+        {/* Header */}
         <div style={{
+          padding: '12px 16px',
+          backgroundColor: '#8b5cf6',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '16px',
         }}>
-          <h2 style={{ 
-            margin: 0, 
-            fontSize: '20px', 
+          <div style={{
+            fontSize: '14px',
             fontWeight: '600',
-            color: '#111827',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}>
             📹 My Camera
-          </h2>
-          <button
-            onClick={handleClose}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-            }}
-          >
-            ✕ Close
-          </button>
-        </div>
+            {isCameraOn && (
+              <span style={{
+                fontSize: '10px',
+                padding: '2px 8px',
+                backgroundColor: '#22c55e',
+                borderRadius: '12px',
+              }}>
+                ● LIVE
+              </span>
+            )}
+          </div>
 
-        {error ? (
-          <div style={{
-            padding: '40px',
-            backgroundColor: '#fee2e2',
-            borderRadius: '12px',
-            textAlign: 'center',
-            color: '#991b1b',
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-            <div style={{ fontWeight: '600', marginBottom: '8px' }}>{error}</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {/* Minimize Button */}
             <button
-              onClick={startCamera}
+              onClick={toggleMinimize}
               style={{
-                marginTop: '16px',
-                padding: '8px 16px',
-                backgroundColor: '#3b82f6',
+                padding: '4px 8px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
                 color: 'white',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 cursor: 'pointer',
+                fontSize: '14px',
                 fontWeight: '600',
               }}
+              title={isMinimized ? 'Expand' : 'Minimize'}
             >
-              Try Again
+              {isMinimized ? '⬆' : '⬇'}
+            </button>
+
+            {/* Close Button */}
+            <button
+              onClick={handleClose}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+              title="Close camera"
+            >
+              ✕
             </button>
           </div>
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{
-                width: '100%',
-                borderRadius: '12px',
-                backgroundColor: '#000',
-                aspectRatio: '16/9',
-              }}
-            />
-            <div style={{
-              marginTop: '16px',
-              padding: '12px',
-              backgroundColor: isCameraOn ? '#dcfce7' : '#fee2e2',
-              borderRadius: '8px',
-              textAlign: 'center',
-              fontSize: '14px',
-              fontWeight: '600',
-              color: isCameraOn ? '#166534' : '#991b1b',
-            }}>
-              {isCameraOn ? '● Camera is active' : '○ Camera is off'}
-            </div>
-          </>
+        </div>
+
+        {/* Video Area */}
+        {!isMinimized && (
+          <div style={{ position: 'relative' }}>
+            {error ? (
+              <div style={{
+                padding: '40px 20px',
+                backgroundColor: '#fee2e2',
+                textAlign: 'center',
+                color: '#991b1b',
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+                <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px' }}>
+                  {error}
+                </div>
+                <button
+                  onClick={startCamera}
+                  style={{
+                    marginTop: '16px',
+                    padding: '8px 16px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#000',
+                    aspectRatio: '16/9',
+                    display: 'block',
+                  }}
+                />
+                
+                {/* Status Indicator */}
+                {isCameraOn && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '12px',
+                    left: '12px',
+                    padding: '6px 12px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+                    color: 'white',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      backgroundColor: 'white',
+                      borderRadius: '50%',
+                      animation: 'pulse 2s ease-in-out infinite',
+                    }} />
+                    LIVE
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </div>
   );
 }

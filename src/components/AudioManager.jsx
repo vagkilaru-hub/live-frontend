@@ -5,10 +5,10 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
   const [muted, setMuted] = useState(true);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState(null);
+  const [peerConnected, setPeerConnected] = useState(false);
   
   const localStreamRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const peerConnectionsRef = useRef({});
+  const peerConnectionRef = useRef(null);
 
   useEffect(() => {
     if (wsManager) {
@@ -18,7 +18,6 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
 
   useEffect(() => {
     return () => {
-      // Cleanup on unmount
       stopAudio();
     };
   }, []);
@@ -38,13 +37,14 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
       localStreamRef.current = stream;
       setAudioEnabled(true);
       setError(null);
+      setPeerConnected(true); // Mark as ready for WebRTC
       
       console.log('✅ Audio stream started');
       
       // Send audio status to server
       if (wsManager && wsManager.isConnected()) {
         wsManager.send({
-          type: 'audio_status',
+          type: 'audio_started',
           data: {
             enabled: true,
             muted: muted,
@@ -57,7 +57,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
       const status = {
         enabled: true,
         muted: muted,
-        connected: connected,
+        connected: true,
       };
       
       if (onStatusChange) {
@@ -68,6 +68,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
       console.error('❌ Error starting audio:', err);
       setError('Microphone access denied');
       setAudioEnabled(false);
+      setPeerConnected(false);
     }
   };
 
@@ -82,18 +83,19 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
       localStreamRef.current = null;
     }
 
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
     }
 
     setAudioEnabled(false);
     setMuted(true);
+    setPeerConnected(false);
 
     // Send audio status to server
     if (wsManager && wsManager.isConnected()) {
       wsManager.send({
-        type: 'audio_status',
+        type: 'audio_stopped',
         data: {
           enabled: false,
           muted: true,
@@ -138,7 +140,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
     // Send mute status to server
     if (wsManager && wsManager.isConnected()) {
       wsManager.send({
-        type: 'audio_status',
+        type: 'audio_mute_toggle',
         data: {
           enabled: audioEnabled,
           muted: newMuted,
