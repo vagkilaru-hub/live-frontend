@@ -249,7 +249,7 @@ export default function TeacherPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      bbackground: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)',
       padding: '20px',
     }}>
       {/* Header */}
