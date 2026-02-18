@@ -611,7 +611,7 @@ export default function TeacherPage() {
               disabled={!messageInput.trim()}
               style={{
                 padding: '12px 20px',
-                background: messageInput.trim() ? 'linear-gradient(135deg,#0ea5e9 0%, #06b6d4 100%)' : '#d1d5db',
+                background: messageInput.trim() ? 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' : '#d1d5db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',

@@ -180,7 +180,7 @@ export default function StudentPage() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+        background: 'linear-gradient(#1e293b 0%, #0f172a 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
