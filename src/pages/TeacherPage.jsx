@@ -27,17 +27,19 @@ export default function TeacherPage() {
   const [showChat, setShowChat] = useState(false);
   const [audioStatus, setAudioStatus] = useState({ enabled: false, muted: true, connected: false });
   const [lastMessage, setLastMessage] = useState('Waiting for messages...');
+  const [cameraStatus, setCameraStatus] = useState('Off'); // ✅ NEW
 
   const wsRef = useRef(null);
   const chatEndRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const MAX_ALERTS = 50;
 
-  // ✅ TEACHER CAMERA STREAMING REFS
+  // ✅ TEACHER CAMERA REFS
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const frameIntervalRef = useRef(null);
+  const isStreamingRef = useRef(false); // ✅ NEW - Track streaming state
 
   const handleWebSocketMessage = useCallback((message) => {
     console.log('📨 Teacher received:', message.type);
@@ -77,7 +79,6 @@ export default function TeacherPage() {
         break;
 
       case 'attention_update':
-        console.log('📊 Attention update:', message.data.student_name, '→', message.data.status);
         setStudents(prev => prev.map(student => {
           if (student.id === message.data.student_id) {
             return {
@@ -98,13 +99,9 @@ export default function TeacherPage() {
         break;
 
       case 'alert':
-        console.log('🚨 ALERT RECEIVED:', message.data);
         setAlerts(prev => {
           const exists = prev.some(a => a.student_id === message.data.student_id);
-          if (exists) {
-            console.log('⚠️ Alert already exists, skipping duplicate');
-            return prev;
-          }
+          if (exists) return prev;
 
           const newAlert = {
             id: `${message.data.student_id}-${Date.now()}`,
@@ -116,20 +113,11 @@ export default function TeacherPage() {
             timestamp: message.data.timestamp,
           };
 
-          console.log('✅ NEW ALERT ADDED:', newAlert);
           return [newAlert, ...prev].slice(0, MAX_ALERTS);
         });
-
-        setStudents(prev => prev.map(student => {
-          if (student.id === message.data.student_id) {
-            return { ...student, alerts_count: (student.alerts_count || 0) + 1 };
-          }
-          return student;
-        }));
         break;
 
       case 'clear_alert':
-        console.log('✅ CLEAR ALERT:', message.data.student_id);
         setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
         break;
 
@@ -139,76 +127,138 @@ export default function TeacherPage() {
         break;
 
       default:
-        console.log('Unknown message type:', message.type);
         break;
     }
   }, []);
 
-  // ✅ TEACHER CAMERA AUTO-START
+  // ✅ IMPROVED CAMERA STREAMING
   useEffect(() => {
-    if (roomId && !streamRef.current) {
-      console.log('⏳ Room created, starting teacher camera in 1.5s...');
+    if (roomId && !isStreamingRef.current) {
+      console.log('⏳ Room created, starting teacher camera in 2s...');
       setTimeout(() => {
         startTeacherCamera();
-      }, 1500);
+      }, 2000);
     }
   }, [roomId]);
 
   const startTeacherCamera = async () => {
+    if (isStreamingRef.current) {
+      console.log('⚠️ Camera already streaming');
+      return;
+    }
+
     try {
-      console.log('📹 Starting teacher camera for streaming...');
+      console.log('📹 Starting teacher camera...');
+      setCameraStatus('Starting...');
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
+          facingMode: 'user'
         },
         audio: false
       });
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        console.log('✅ Teacher camera started, capturing frames...');
-
-        // Start sending frames every 100ms (10 FPS)
-        frameIntervalRef.current = setInterval(() => {
-          captureAndSendFrame();
-        }, 100);
+      if (!videoRef.current) {
+        console.error('❌ Video ref not available');
+        stream.getTracks().forEach(track => track.stop());
+        return;
       }
+
+      videoRef.current.srcObject = stream;
+      streamRef.current = stream;
+
+      // ✅ WAIT FOR VIDEO TO BE READY
+      await new Promise((resolve) => {
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play()
+            .then(() => {
+              console.log('✅ Video playing');
+              resolve();
+            })
+            .catch(err => {
+              console.error('❌ Error playing video:', err);
+              resolve();
+            });
+        };
+      });
+
+      // ✅ ADDITIONAL WAIT FOR FIRST FRAME
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log('✅ Teacher camera ready, starting frame capture...');
+      console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+      console.log('Video ready state:', videoRef.current.readyState);
+
+      isStreamingRef.current = true;
+      setCameraStatus('Streaming ✅');
+
+      // Start capturing frames
+      frameIntervalRef.current = setInterval(() => {
+        captureAndSendFrame();
+      }, 100); // 10 FPS
+
     } catch (error) {
       console.error('❌ Camera error:', error);
+      setCameraStatus('Error ❌');
       alert('Could not access camera: ' + error.message);
     }
   };
 
   const captureAndSendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected()) return;
+    if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected() || !isStreamingRef.current) {
+      return;
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
+
+    // ✅ CRITICAL FIX: Check video dimensions
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.warn('⚠️ Video not ready yet (dimensions are 0)');
+      return;
+    }
+
+    // ✅ CRITICAL FIX: Check ready state
+    if (video.readyState < 2) { // HAVE_CURRENT_DATA = 2, HAVE_ENOUGH_DATA = 4
+      console.warn('⚠️ Video not ready yet (readyState:', video.readyState, ')');
+      return;
+    }
+
     const context = canvas.getContext('2d');
 
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+    // Set canvas dimensions to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    try {
+      // Draw the video frame to canvas
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      try {
-        const frameData = canvas.toDataURL('image/jpeg', 0.6);
+      // Convert to base64 JPEG
+      const frameData = canvas.toDataURL('image/jpeg', 0.7);
+
+      // ✅ VERIFY FRAME IS NOT BLANK
+      if (frameData && frameData.length > 1000) { // Ensure frame has actual data
         wsRef.current.send({
           type: 'teacher_camera_frame',
           frame: frameData
         });
-      } catch (err) {
-        console.error('Frame capture error:', err);
+      } else {
+        console.warn('⚠️ Frame data too small, skipping send');
       }
+    } catch (err) {
+      console.error('❌ Frame capture error:', err);
     }
   };
 
   const stopTeacherCamera = () => {
     console.log('🛑 Stopping teacher camera...');
     
+    isStreamingRef.current = false;
+    setCameraStatus('Off');
+
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
       frameIntervalRef.current = null;
@@ -217,6 +267,10 @@ export default function TeacherPage() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   };
 
@@ -253,19 +307,12 @@ export default function TeacherPage() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      stopTeacherCamera(); // ✅ Stop camera on unmount
+      stopTeacherCamera();
       if (wsRef.current) {
         wsRef.current.disconnect();
       }
     };
   }, [handleWebSocketMessage]);
-
-  useEffect(() => {
-    console.log('🔄 ALERTS STATE UPDATED:', alerts.length, 'alerts');
-    alerts.forEach((alert, index) => {
-      console.log(`  ${index + 1}. ${alert.student_name} - ${alert.alert_type}`);
-    });
-  }, [alerts]);
 
   useEffect(() => {
     const total = students.length;
@@ -275,7 +322,6 @@ export default function TeacherPage() {
   }, [students]);
 
   const clearAlerts = () => {
-    console.log('🧹 Clearing all alerts');
     setAlerts([]);
   };
 
@@ -392,10 +438,7 @@ export default function TeacherPage() {
               wsManager={wsRef.current}
               userId="teacher"
               userType="teacher"
-              onStatusChange={(status) => {
-                setAudioStatus(status);
-                console.log('Teacher audio:', status);
-              }}
+              onStatusChange={(status) => setAudioStatus(status)}
             />
 
             <button
@@ -452,9 +495,8 @@ export default function TeacherPage() {
                 marginBottom: '8px',
                 fontWeight: '600',
                 textTransform: 'uppercase',
-                letterSpacing: '1px',
               }}>
-                📋 ROOM CODE - SHARE WITH STUDENTS
+                📋 ROOM CODE
               </div>
               <div style={{
                 fontSize: '42px',
@@ -477,10 +519,9 @@ export default function TeacherPage() {
                 cursor: 'pointer',
                 fontSize: '15px',
                 fontWeight: '600',
-                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
               }}
             >
-              📋 Copy Code
+              📋 Copy
             </button>
           </div>
         ) : (
@@ -489,12 +530,9 @@ export default function TeacherPage() {
             backgroundColor: '#fef3c7',
             borderRadius: '8px',
             marginBottom: '16px',
-            fontSize: '14px',
-            color: '#92400e',
             textAlign: 'center',
-            fontWeight: '500',
           }}>
-            ⏳ Generating room code...
+            ⏳ Generating room...
           </div>
         )}
 
@@ -561,6 +599,7 @@ export default function TeacherPage() {
         </div>
       </div>
 
+      {/* DEBUG PANEL */}
       <div style={{
         backgroundColor: '#1f2937',
         color: '#10b981',
@@ -571,16 +610,20 @@ export default function TeacherPage() {
         fontSize: '12px',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#60a5fa' }}>
-          🔍 LIVE DEBUG:
+          🔍 DEBUG:
         </div>
         <div style={{ color: '#a3e635' }}>
-          Alerts: {alerts.length} | Students: {students.length} | Camera: {streamRef.current ? '✅ Streaming' : '❌ Off'}
+          Camera: {cameraStatus} | Students: {students.length} | Alerts: {alerts.length}
         </div>
         <div style={{ color: '#fbbf24', marginTop: '4px' }}>
-          Last: {lastMessage}
+          Video Dimensions: {videoRef.current?.videoWidth || 0} x {videoRef.current?.videoHeight || 0}
+        </div>
+        <div style={{ color: '#f87171', marginTop: '4px' }}>
+          Ready State: {videoRef.current?.readyState || 'N/A'}
         </div>
       </div>
 
+      {/* Chat Sidebar - Same as before */}
       {showChat && (
         <div style={{
           position: 'fixed',
@@ -642,9 +685,6 @@ export default function TeacherPage() {
                     {msg.user_name}{msg.user_type === 'teacher' && ' 👨‍🏫'}
                   </div>
                   <div style={{ fontSize: '14px', color: '#374151' }}>{msg.message}</div>
-                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
-                    {formatTimeIST(msg.timestamp)}
-                  </div>
                 </div>
               ))
             )}
@@ -687,24 +727,21 @@ export default function TeacherPage() {
         </div>
       )}
 
+      {/* Students & Alerts Grid - Same as before */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '20px',
         marginBottom: '20px',
       }}>
+        {/* Students */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
           padding: '24px',
           boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
         }}>
-          <h3 style={{
-            fontSize: '18px',
-            fontWeight: '600',
-            color: '#111827',
-            marginBottom: '16px',
-          }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
             👥 Students ({students.length})
           </h3>
 
@@ -716,10 +753,9 @@ export default function TeacherPage() {
               justifyContent: 'center',
               height: '400px',
               color: '#9ca3af',
-              fontSize: '14px',
             }}>
               <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-              <div>No students connected yet</div>
+              <div>No students yet</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '600px', overflowY: 'auto' }}>
@@ -759,6 +795,7 @@ export default function TeacherPage() {
           )}
         </div>
 
+        {/* Alerts */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
@@ -771,13 +808,8 @@ export default function TeacherPage() {
             alignItems: 'center',
             marginBottom: '16px',
           }}>
-            <h3 style={{
-              fontSize: '18px',
-              fontWeight: '600',
-              color: '#111827',
-              margin: 0,
-            }}>
-              🚨 Real-Time Alerts
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
+              🚨 Alerts
               {alerts.length > 0 && (
                 <span style={{
                   marginLeft: '8px',
@@ -810,13 +842,7 @@ export default function TeacherPage() {
             )}
           </div>
 
-          <div style={{
-            maxHeight: '600px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px'
-          }}>
+          <div style={{ maxHeight: '600px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {alerts.length === 0 ? (
               <div style={{
                 display: 'flex',
@@ -825,10 +851,9 @@ export default function TeacherPage() {
                 justifyContent: 'center',
                 height: '400px',
                 color: '#9ca3af',
-                fontSize: '14px',
               }}>
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                <div>No active alerts</div>
+                <div>No alerts</div>
               </div>
             ) : (
               alerts.map((alert) => (
@@ -847,21 +872,14 @@ export default function TeacherPage() {
                     justifyContent: 'space-between',
                     marginBottom: '8px',
                   }}>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: '#111827',
-                    }}>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
                       {getSeverityIcon(alert.severity)} {alert.student_name}
                     </div>
                     <div style={{ fontSize: '11px', color: '#9ca3af' }}>
                       {formatTimeAgoIST(alert.timestamp)}
                     </div>
                   </div>
-                  <div style={{
-                    fontSize: '14px',
-                    color: '#4b5563',
-                  }}>
+                  <div style={{ fontSize: '14px', color: '#4b5563' }}>
                     {alert.message}
                   </div>
                 </div>
@@ -871,6 +889,7 @@ export default function TeacherPage() {
         </div>
       </div>
 
+      {/* Student Cameras */}
       <div style={{
         backgroundColor: 'white',
         borderRadius: '16px',
@@ -878,7 +897,7 @@ export default function TeacherPage() {
         boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
       }}>
         <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
-          📹 Live Student Cameras ({students.length})
+          📹 Student Cameras ({students.length})
         </h3>
 
         {students.length === 0 ? (
@@ -889,10 +908,9 @@ export default function TeacherPage() {
             justifyContent: 'center',
             height: '300px',
             color: '#9ca3af',
-            fontSize: '14px',
           }}>
             <div style={{ fontSize: '64px', marginBottom: '16px' }}>📹</div>
-            <div>No students connected</div>
+            <div>No students</div>
           </div>
         ) : (
           <div style={{
@@ -983,14 +1001,13 @@ export default function TeacherPage() {
         )}
       </div>
 
-      {/* ✅ TEACHER CAMERA MODAL - BOTTOM LEFT CORNER */}
+      {/* Teacher Camera Modal */}
       {showMyCamera && (
         <div style={{
           position: 'fixed',
           bottom: '30px',
           left: '30px',
           zIndex: 999,
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
         }}>
           <TeacherCamera 
             onClose={() => setShowMyCamera(false)} 
@@ -999,16 +1016,19 @@ export default function TeacherPage() {
         </div>
       )}
 
-      {/* ✅ HIDDEN VIDEO & CANVAS FOR STREAMING */}
-      <div style={{ display: 'none' }}>
+      {/* ✅ HIDDEN VIDEO FOR STREAMING */}
+      <div style={{ position: 'absolute', left: '-9999px' }}>
         <video 
           ref={videoRef} 
           autoPlay 
           playsInline 
           muted 
-          onLoadedMetadata={() => console.log('✅ Video loaded for streaming')}
+          style={{ width: '640px', height: '480px' }}
         />
-        <canvas ref={canvasRef} />
+        <canvas 
+          ref={canvasRef}
+          style={{ width: '640px', height: '480px' }}
+        />
       </div>
     </div>
   );
