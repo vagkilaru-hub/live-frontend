@@ -55,6 +55,11 @@ export default function StudentPage() {
         setTeacherFrame(message.data.frame);
         break;
 
+      case 'teacher_camera_stopped':
+        console.log('📹 Teacher camera stopped');
+        setTeacherFrame(null);
+        break;
+
       case 'camera_frame':
         if (message.data.student_id !== studentIdRef.current) {
           setParticipantFrames(prev => ({
@@ -118,7 +123,7 @@ export default function StudentPage() {
   };
 
   const handleLeave = () => {
-    if (confirm('Leave the class?')) {
+    if (window.confirm('Leave the class?')) {
       if (wsRef.current) {
         wsRef.current.disconnect();
       }
@@ -142,7 +147,7 @@ export default function StudentPage() {
       wsRef.current.send(message);
       console.log('✅ SENT TO SERVER:', message);
     } else {
-      console.error('❌❌❌ WEBSOCKET NOT CONNECTED - CANNOT SEND STATUS');
+      console.error('❌ WEBSOCKET NOT CONNECTED - CANNOT SEND STATUS');
     }
   };
 
@@ -180,7 +185,7 @@ export default function StudentPage() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(#1e293b 0%, #0f172a 100%)',
+        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -199,18 +204,16 @@ export default function StudentPage() {
             fontWeight: 'bold',
             marginBottom: '8px',
             textAlign: 'center',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
+            color: '#1e293b',
           }}>
             Join Class
           </h1>
-          <p style={{ textAlign: 'center', color: '#6b7280', marginBottom: '32px' }}>
+          <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '32px', fontSize: '15px' }}>
             Enter your details to join the live session
           </p>
 
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
               Your Name
             </label>
             <input
@@ -230,7 +233,7 @@ export default function StudentPage() {
           </div>
 
           <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
               Room Code
             </label>
             <input
@@ -261,7 +264,7 @@ export default function StudentPage() {
               width: '100%',
               padding: '14px',
               background: studentName.trim() && roomCode.trim()
-                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : '#d1d5db',
               color: 'white',
               border: 'none',
@@ -296,13 +299,13 @@ export default function StudentPage() {
     );
   }
 
-  // FIXED: Filter out current student from participants
+  // Filter out current student from participants
   const otherParticipants = participants.filter(p => p.id !== studentIdRef.current);
 
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
       padding: '20px',
     }}>
       {/* Header */}
@@ -369,32 +372,6 @@ export default function StudentPage() {
         </div>
       </div>
 
-      {/* Audio Status Indicator */}
-      {audioStatus.enabled && (
-        <div style={{
-          backgroundColor: audioStatus.connected ? '#dcfce7' : '#fef3c7',
-          padding: '12px 24px',
-          marginBottom: '20px',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          fontSize: '14px',
-          fontWeight: '600',
-          color: audioStatus.connected ? '#166534' : '#92400e',
-        }}>
-          <span style={{ fontSize: '20px' }}>
-            {audioStatus.connected ? '🔊' : '🔌'}
-          </span>
-          <span>
-            {audioStatus.connected
-              ? `Audio Connected ${audioStatus.muted ? '(Muted)' : '(Speaking)'}`
-              : 'Microphone enabled (WebRTC needed for transmission)'}
-          </span>
-        </div>
-      )}
-
       {/* Tabs */}
       <div style={{
         backgroundColor: 'white',
@@ -411,7 +388,7 @@ export default function StudentPage() {
           style={{
             padding: '12px',
             background: activeTab === 'camera'
-              ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+              ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
               : '#f3f4f6',
             color: activeTab === 'camera' ? 'white' : '#6b7280',
             border: 'none',
@@ -429,7 +406,7 @@ export default function StudentPage() {
           style={{
             padding: '12px',
             background: activeTab === 'participants'
-              ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+              ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
               : '#f3f4f6',
             color: activeTab === 'participants' ? 'white' : '#6b7280',
             border: 'none',
@@ -439,7 +416,7 @@ export default function StudentPage() {
             cursor: 'pointer',
           }}
         >
-          👥 Participants ({otherParticipants.length})
+          👥 Participants ({otherParticipants.length + 1})
         </button>
 
         <button
@@ -447,7 +424,7 @@ export default function StudentPage() {
           style={{
             padding: '12px',
             background: activeTab === 'chat'
-              ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+              ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
               : '#f3f4f6',
             color: activeTab === 'chat' ? 'white' : '#6b7280',
             border: 'none',
@@ -510,48 +487,6 @@ export default function StudentPage() {
                 </div>
               )}
             </div>
-
-            {/* Student's Own Camera (Corner - Picture in Picture) */}
-            <div style={{
-              position: 'fixed',
-              bottom: '30px',
-              right: '30px',
-              width: '240px',
-              zIndex: 1000,
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-              borderRadius: '12px',
-              border: '3px solid #22c55e',
-              overflow: 'hidden',
-              backgroundColor: 'white',
-            }}>
-              <div style={{
-                backgroundColor: '#22c55e',
-                color: 'white',
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: '600',
-                textAlign: 'center',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}>
-                <span>📹 You</span>
-                {audioStatus.enabled && (
-                  <span style={{
-                    fontSize: '10px',
-                    padding: '2px 6px',
-                    backgroundColor: audioStatus.muted ? '#ef4444' : '#22c55e',
-                    borderRadius: '8px',
-                  }}>
-                    {audioStatus.muted ? '🔇' : '🔊'}
-                  </span>
-                )}
-              </div>
-              <StudentCamera
-                onStatusChange={handleStatusChange}
-                onFrameCapture={handleFrameCapture}
-              />
-            </div>
           </div>
         )}
 
@@ -559,21 +494,56 @@ export default function StudentPage() {
         {activeTab === 'participants' && (
           <>
             <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
-              Participants ({otherParticipants.length})
+              Participants ({otherParticipants.length + 1})
             </h3>
-            {otherParticipants.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Current Student (You) */}
               <div style={{
-                textAlign: 'center',
-                color: '#9ca3af',
-                padding: '60px 20px',
-                fontSize: '14px',
+                padding: '16px',
+                backgroundColor: '#dcfce7',
+                border: '2px solid #22c55e',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
               }}>
-                <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-                <div>No other participants yet</div>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                }}>
+                  {studentName.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '600', fontSize: '16px', color: '#111827' }}>
+                    {studentName} (You) 🎓
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#166534', marginTop: '2px' }}>
+                    Student • {audioStatus.enabled ? (audioStatus.muted ? '🔇 Muted' : '🔊 Speaking') : '🔇 Audio Off'}
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {otherParticipants.map((participant) => (
+
+              {/* Other Participants */}
+              {otherParticipants.length === 0 ? (
+                <div style={{
+                  textAlign: 'center',
+                  color: '#9ca3af',
+                  padding: '40px 20px',
+                  fontSize: '14px',
+                }}>
+                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+                  <div>No other participants yet</div>
+                </div>
+              ) : (
+                otherParticipants.map((participant) => (
                   <div
                     key={participant.id}
                     style={{
@@ -611,9 +581,9 @@ export default function StudentPage() {
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </>
         )}
 
@@ -683,7 +653,7 @@ export default function StudentPage() {
                 style={{
                   padding: '12px 20px',
                   background: messageInput.trim()
-                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                    ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                     : '#d1d5db',
                   color: 'white',
                   border: 'none',
@@ -700,6 +670,66 @@ export default function StudentPage() {
         )}
       </div>
 
+      {/* ✅ STUDENT'S OWN CAMERA - FIXED POSITION, ALWAYS VISIBLE */}
+      <div style={{
+        position: 'fixed',
+        bottom: '30px',
+        right: '30px',
+        width: '300px',
+        height: 'auto',
+        zIndex: 9999,
+        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+        borderRadius: '16px',
+        border: '4px solid #22c55e',
+        overflow: 'hidden',
+        backgroundColor: 'white',
+      }}>
+        {/* Header with Audio Status */}
+        <div style={{
+          backgroundColor: '#22c55e',
+          color: 'white',
+          padding: '10px 16px',
+          fontSize: '14px',
+          fontWeight: '700',
+          textAlign: 'center',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <span>📹 You</span>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {/* Audio Status Indicator */}
+            {audioStatus.enabled && (
+              <span style={{
+                fontSize: '12px',
+                padding: '4px 10px',
+                backgroundColor: audioStatus.connected 
+                  ? (audioStatus.muted ? '#ef4444' : '#10b981')
+                  : '#f59e0b',
+                borderRadius: '12px',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}>
+                {audioStatus.connected 
+                  ? (audioStatus.muted ? '🔇 Muted' : '🔊 Live')
+                  : '🔌 Connecting'}
+              </span>
+            )}
+          </div>
+        </div>
+        
+        {/* Camera Feed - ALWAYS ACTIVE */}
+        <div style={{ width: '100%', height: '225px', position: 'relative', backgroundColor: '#000' }}>
+          <StudentCamera
+            onStatusChange={handleStatusChange}
+            onFrameCapture={handleFrameCapture}
+          />
+        </div>
+      </div>
+
+      {/* Connection Error Toast */}
       {connectionError && (
         <div style={{
           position: 'fixed',
@@ -713,6 +743,7 @@ export default function StudentPage() {
           fontSize: '14px',
           fontWeight: '600',
           boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+          zIndex: 10000,
         }}>
           {connectionError}
         </div>

@@ -33,13 +33,6 @@ export default function TeacherPage() {
   const reconnectTimeoutRef = useRef(null);
   const MAX_ALERTS = 50;
 
-  // ✅ TEACHER CAMERA STREAMING REFS
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const frameIntervalRef = useRef(null);
-  const isStreamingRef = useRef(false);
-
   const handleWebSocketMessage = useCallback((message) => {
     console.log('📨 Teacher received:', message.type);
     setLastMessage(`${message.type} - ${new Date().toLocaleTimeString()}`);
@@ -117,7 +110,7 @@ export default function TeacherPage() {
             timestamp: message.data.timestamp,
           };
 
-          console.log('✅ NEW ALERT ADDED:', newAlert);
+          console.log('✅ NEW ALERT:', newAlert);
           return [newAlert, ...prev].slice(0, MAX_ALERTS);
         });
 
@@ -178,7 +171,6 @@ export default function TeacherPage() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      stopTeacherCamera(); // ✅ Stop camera on unmount
       if (wsRef.current) {
         wsRef.current.disconnect();
       }
@@ -187,9 +179,6 @@ export default function TeacherPage() {
 
   useEffect(() => {
     console.log('🔄 ALERTS:', alerts.length);
-    alerts.forEach((alert, i) => {
-      console.log(`  ${i + 1}. ${alert.student_name} - ${alert.alert_type}`);
-    });
   }, [alerts]);
 
   useEffect(() => {
@@ -198,130 +187,6 @@ export default function TeacherPage() {
     const needsAttention = total - attentive;
     setStats({ total, attentive, needsAttention });
   }, [students]);
-
-  // ✅ AUTO-START CAMERA WHEN ROOM IS CREATED
-  useEffect(() => {
-    if (roomId && !isStreamingRef.current && wsRef.current?.isConnected()) {
-      console.log('⏳ Room created, starting camera in 2s...');
-      setTimeout(() => {
-        startTeacherCamera();
-      }, 2000);
-    }
-  }, [roomId]);
-
-  const startTeacherCamera = async () => {
-    if (isStreamingRef.current) {
-      console.log('⚠️ Camera already streaming');
-      return;
-    }
-
-    try {
-      console.log('📹 Starting teacher camera...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
-        },
-        audio: false
-      });
-
-      if (!videoRef.current) {
-        console.error('❌ Video ref not found');
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
-
-      videoRef.current.srcObject = stream;
-      streamRef.current = stream;
-
-      // ✅ Wait for video to load
-      await new Promise((resolve) => {
-        videoRef.current.onloadedmetadata = async () => {
-          try {
-            await videoRef.current.play();
-            console.log('✅ Video playing:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
-            resolve();
-          } catch (err) {
-            console.error('❌ Play error:', err);
-            resolve();
-          }
-        };
-      });
-
-      // ✅ Wait for first frame
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      isStreamingRef.current = true;
-      console.log('✅ Starting frame capture');
-
-      // Capture frames every 100ms (10 FPS)
-      frameIntervalRef.current = setInterval(() => {
-        captureAndSendFrame();
-      }, 100);
-
-    } catch (error) {
-      console.error('❌ Camera error:', error);
-      alert('Camera access denied: ' + error.message);
-    }
-  };
-
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected() || !isStreamingRef.current) {
-      return;
-    }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-
-    // Check video is ready
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      return;
-    }
-
-    if (video.readyState < 2) {
-      return;
-    }
-
-    const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    try {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const frameData = canvas.toDataURL('image/jpeg', 0.7);
-
-      if (frameData && frameData.length > 5000) {
-        wsRef.current.send({
-          type: 'teacher_camera_frame',
-          frame: frameData
-        });
-      }
-    } catch (err) {
-      console.error('❌ Frame error:', err);
-    }
-  };
-
-  const stopTeacherCamera = () => {
-    console.log('🛑 Stopping camera');
-    
-    isStreamingRef.current = false;
-
-    if (frameIntervalRef.current) {
-      clearInterval(frameIntervalRef.current);
-      frameIntervalRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  };
 
   const clearAlerts = () => {
     console.log('🧹 Clearing alerts');
@@ -347,7 +212,6 @@ export default function TeacherPage() {
 
   const handleLeaveClass = () => {
     if (window.confirm('End class for all students?')) {
-      stopTeacherCamera(); // ✅ Stop camera before leaving
       if (wsRef.current) wsRef.current.disconnect();
       navigate('/');
     }
@@ -443,7 +307,6 @@ export default function TeacherPage() {
               userType="teacher"
               onStatusChange={(status) => {
                 setAudioStatus(status);
-                console.log('Teacher audio:', status);
               }}
             />
 
@@ -624,7 +487,7 @@ export default function TeacherPage() {
           🔍 DEBUG:
         </div>
         <div style={{ color: '#a3e635' }}>
-          Alerts: {alerts.length} | Students: {students.length} | Camera: {isStreamingRef.current ? '✅ Streaming' : '❌ Off'}
+          Alerts: {alerts.length} | Students: {students.length}
         </div>
         <div style={{ color: '#fbbf24', marginTop: '4px' }}>
           Last: {lastMessage}
@@ -1052,21 +915,6 @@ export default function TeacherPage() {
 
       {/* Teacher Camera Modal */}
       {showMyCamera && <TeacherCamera onClose={() => setShowMyCamera(false)} wsManager={wsRef.current} />}
-
-      {/* ✅ HIDDEN VIDEO FOR STREAMING */}
-      <div style={{ position: 'absolute', left: '-9999px' }}>
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          style={{ width: '640px', height: '480px' }}
-        />
-        <canvas 
-          ref={canvasRef}
-          style={{ width: '640px', height: '480px' }}
-        />
-      </div>
 
       <style>{`
         @keyframes pulse {
