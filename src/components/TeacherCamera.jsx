@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function TeacherCamera({ onClose, wsManager }) {
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [error, setError] = useState(null);
+  const [isMinimized, setIsMinimized] = useState(false);
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const frameIntervalRef = useRef(null);
-  const [isStreaming, setIsStreaming] = useState(false);
 
   useEffect(() => {
     startCamera();
-
     return () => {
       stopCamera();
     };
@@ -18,122 +17,36 @@ export default function TeacherCamera({ onClose, wsManager }) {
   const startCamera = async () => {
     try {
       console.log('📹 Starting teacher camera...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({ 
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          facingMode: 'user'
-        },
-        audio: false
+        }, 
+        audio: false 
       });
-
-      if (!videoRef.current) {
-        console.error('❌ Video ref not found');
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
-
-      videoRef.current.srcObject = stream;
-      streamRef.current = stream;
-
-      // Wait for video to load
-      await new Promise((resolve) => {
-        videoRef.current.onloadedmetadata = async () => {
-          try {
-            await videoRef.current.play();
-            console.log('✅ Video playing:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
-            resolve();
-          } catch (err) {
-            console.error('❌ Play error:', err);
-            resolve();
-          }
-        };
-      });
-
-      // Wait for first frame
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setIsStreaming(true);
-      console.log('✅ Starting frame capture to students');
-
-      // Start streaming to students
-      frameIntervalRef.current = setInterval(() => {
-        captureAndSendFrame();
-      }, 100); // 10 FPS
-
-    } catch (error) {
-      console.error('❌ Camera error:', error);
-      alert('Could not access camera: ' + error.message);
-    }
-  };
-
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsManager?.isConnected()) {
-      return;
-    }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-
-    // Check video is ready
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      return;
-    }
-
-    if (video.readyState < 2) {
-      return;
-    }
-
-    const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    try {
-      // Draw current frame
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      // Convert to JPEG
-      const frameData = canvas.toDataURL('image/jpeg', 0.7);
-
-      // Send to students via WebSocket
-      if (frameData && frameData.length > 5000) {
-        wsManager.send({
-          type: 'teacher_camera_frame',
-          frame: frameData
-        });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setIsCameraOn(true);
+        setError(null);
+        console.log('✅ Teacher camera started');
       }
-    } catch (err) {
-      console.error('❌ Frame capture error:', err);
+    } catch (error) {
+      console.error('❌ Error accessing camera:', error);
+      setError('Could not access camera. Please check permissions.');
     }
   };
 
   const stopCamera = () => {
-    console.log('🛑 Stopping teacher camera stream');
-    
-    setIsStreaming(false);
-
-    // Stop frame capture
-    if (frameIntervalRef.current) {
-      clearInterval(frameIntervalRef.current);
-      frameIntervalRef.current = null;
-    }
-
-    // Stop camera stream
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    // Notify students camera stopped
-    if (wsManager?.isConnected()) {
-      wsManager.send({
-        type: 'teacher_camera_stopped'
+      console.log('🛑 Stopping teacher camera...');
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Track stopped:', track.kind);
       });
+      streamRef.current = null;
+      setIsCameraOn(false);
     }
   };
 
@@ -142,118 +55,173 @@ export default function TeacherCamera({ onClose, wsManager }) {
     onClose();
   };
 
+  const toggleMinimize = () => {
+    setIsMinimized(!isMinimized);
+  };
+
   return (
     <div style={{
       position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      backgroundColor: 'white',
-      borderRadius: '20px',
-      padding: '24px',
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
-      zIndex: 1000,
-      maxWidth: '90vw',
-      maxHeight: '90vh',
+      bottom: isMinimized ? '20px' : '20px',
+      right: '20px',
+      zIndex: 2000,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
     }}>
-      {/* Header */}
+      {/* Camera Container */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '16px',
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+        overflow: 'hidden',
+        width: isMinimized ? '280px' : '400px',
+        transition: 'all 0.3s ease',
       }}>
-        <h3 style={{
-          fontSize: '20px',
-          fontWeight: '700',
-          color: '#111827',
-          margin: 0,
+        {/* Header */}
+        <div style={{
+          padding: '12px 16px',
+          backgroundColor: '#8b5cf6',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}>
-          📹 My Camera {isStreaming && '(Streaming to Students)'}
-        </h3>
-        <button
-          onClick={handleClose}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
+          <div style={{
             fontSize: '14px',
             fontWeight: '600',
-          }}
-        >
-          ✕ Close
-        </button>
-      </div>
-
-      {/* Video Display */}
-      <div style={{
-        position: 'relative',
-        width: '640px',
-        height: '480px',
-        backgroundColor: '#000',
-        borderRadius: '12px',
-        overflow: 'hidden',
-      }}>
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transform: 'scaleX(-1)', // Mirror effect
-          }}
-        />
-
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <div style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            padding: '8px 16px',
-            backgroundColor: '#ef4444',
             color: 'white',
-            borderRadius: '20px',
-            fontSize: '13px',
-            fontWeight: '700',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
           }}>
-            <span style={{
-              width: '10px',
-              height: '10px',
-              backgroundColor: 'white',
-              borderRadius: '50%',
-              animation: 'pulse 2s ease-in-out infinite',
-            }} />
-            LIVE TO STUDENTS
+            📹 My Camera
+            {isCameraOn && (
+              <span style={{
+                fontSize: '10px',
+                padding: '2px 8px',
+                backgroundColor: '#22c55e',
+                borderRadius: '12px',
+              }}>
+                ● LIVE
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {/* Minimize Button */}
+            <button
+              onClick={toggleMinimize}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+              title={isMinimized ? 'Expand' : 'Minimize'}
+            >
+              {isMinimized ? '⬆' : '⬇'}
+            </button>
+
+            {/* Close Button */}
+            <button
+              onClick={handleClose}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+              title="Close camera"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Video Area */}
+        {!isMinimized && (
+          <div style={{ position: 'relative' }}>
+            {error ? (
+              <div style={{
+                padding: '40px 20px',
+                backgroundColor: '#fee2e2',
+                textAlign: 'center',
+                color: '#991b1b',
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+                <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px' }}>
+                  {error}
+                </div>
+                <button
+                  onClick={startCamera}
+                  style={{
+                    marginTop: '16px',
+                    padding: '8px 16px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#000',
+                    aspectRatio: '16/9',
+                    display: 'block',
+                  }}
+                />
+                
+                {/* Status Indicator */}
+                {isCameraOn && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '12px',
+                    left: '12px',
+                    padding: '6px 12px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+                    color: 'white',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      backgroundColor: 'white',
+                      borderRadius: '50%',
+                      animation: 'pulse 2s ease-in-out infinite',
+                    }} />
+                    LIVE
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
-      </div>
-
-      {/* Hidden canvas for frame capture */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-      {/* Info */}
-      <div style={{
-        marginTop: '16px',
-        padding: '12px',
-        backgroundColor: '#f0fdf4',
-        borderRadius: '8px',
-        fontSize: '13px',
-        color: '#166534',
-        textAlign: 'center',
-      }}>
-        {isStreaming 
-          ? '✓ Your camera is streaming to all students' 
-          : '⏳ Preparing camera...'}
       </div>
 
       <style>{`

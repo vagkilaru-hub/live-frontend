@@ -92,11 +92,14 @@ export default function TeacherPage() {
         break;
 
       case 'alert':
-        console.log('🚨 ALERT RECEIVED:', message.data);
+        console.log('🚨🚨🚨 ALERT RECEIVED FROM BACKEND:', message.data);
+
         setAlerts(prev => {
+          // Check if alert already exists for this student
           const exists = prev.some(a => a.student_id === message.data.student_id);
+
           if (exists) {
-            console.log('⚠️ Alert exists, skipping');
+            console.log('⚠️ Alert already exists for this student, skipping duplicate');
             return prev;
           }
 
@@ -110,8 +113,10 @@ export default function TeacherPage() {
             timestamp: message.data.timestamp,
           };
 
-          console.log('✅ NEW ALERT:', newAlert);
-          return [newAlert, ...prev].slice(0, MAX_ALERTS);
+          console.log('✅✅✅ NEW ALERT ADDED TO DASHBOARD:', newAlert);
+          const updatedAlerts = [newAlert, ...prev].slice(0, MAX_ALERTS);
+          console.log('📊 Total alerts now:', updatedAlerts.length);
+          return updatedAlerts;
         });
 
         setStudents(prev => prev.map(student => {
@@ -123,8 +128,12 @@ export default function TeacherPage() {
         break;
 
       case 'clear_alert':
-        console.log('✅ CLEAR ALERT:', message.data.student_id);
-        setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
+        console.log('✅✅✅ CLEAR ALERT RECEIVED:', message.data.student_id);
+        setAlerts(prev => {
+          const filtered = prev.filter(a => a.student_id !== message.data.student_id);
+          console.log('📊 Alerts after clearing:', filtered.length);
+          return filtered;
+        });
         break;
 
       case 'chat_message':
@@ -133,7 +142,7 @@ export default function TeacherPage() {
         break;
 
       default:
-        console.log('Unknown message:', message.type);
+        console.log('Unknown message type:', message.type);
         break;
     }
   }, []);
@@ -177,10 +186,15 @@ export default function TeacherPage() {
     };
   }, [handleWebSocketMessage]);
 
+  // Debug logging when alerts change
   useEffect(() => {
-    console.log('🔄 ALERTS:', alerts.length);
+    console.log('🔄 ALERTS STATE UPDATED:', alerts.length, 'alerts');
+    alerts.forEach((alert, index) => {
+      console.log(`  ${index + 1}. ${alert.student_name} - ${alert.alert_type} - ${alert.message}`);
+    });
   }, [alerts]);
 
+  // Update stats when students change
   useEffect(() => {
     const total = students.length;
     const attentive = students.filter(s => s.status === 'attentive').length;
@@ -189,7 +203,7 @@ export default function TeacherPage() {
   }, [students]);
 
   const clearAlerts = () => {
-    console.log('🧹 Clearing alerts');
+    console.log('🧹 Clearing all alerts');
     setAlerts([]);
   };
 
@@ -235,7 +249,7 @@ export default function TeacherPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)',
+      bbackground: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)',
       padding: '20px',
     }}>
       {/* Header */}
@@ -275,6 +289,7 @@ export default function TeacherPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* Connection Status */}
             <div style={{
               padding: '8px 16px',
               backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
@@ -285,6 +300,7 @@ export default function TeacherPage() {
               ● {isConnected ? 'Connected' : 'Reconnecting...'}
             </div>
 
+            {/* Show My Camera */}
             <button
               onClick={() => setShowMyCamera(true)}
               style={{
@@ -301,15 +317,18 @@ export default function TeacherPage() {
               📹 My Camera
             </button>
 
+            {/* Audio Manager Component */}
             <AudioManager
               wsManager={wsRef.current}
               userId="teacher"
               userType="teacher"
               onStatusChange={(status) => {
                 setAudioStatus(status);
+                console.log('Teacher audio:', status);
               }}
             />
 
+            {/* Chat */}
             <button
               onClick={() => setShowChat(!showChat)}
               style={{
@@ -326,6 +345,7 @@ export default function TeacherPage() {
               💬 Chat {messages.length > 0 && `(${messages.length})`}
             </button>
 
+            {/* Leave Class */}
             <button
               onClick={handleLeaveClass}
               style={{
@@ -344,6 +364,7 @@ export default function TeacherPage() {
           </div>
         </div>
 
+        {/* Room Code */}
         {roomId ? (
           <div style={{
             display: 'flex',
@@ -410,6 +431,7 @@ export default function TeacherPage() {
           </div>
         )}
 
+        {/* Stats */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -473,7 +495,7 @@ export default function TeacherPage() {
         </div>
       </div>
 
-      {/* DEBUG */}
+      {/* DEBUG PANEL */}
       <div style={{
         backgroundColor: '#1f2937',
         color: '#10b981',
@@ -484,17 +506,20 @@ export default function TeacherPage() {
         fontSize: '12px',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#60a5fa' }}>
-          🔍 DEBUG:
+          🔍 LIVE DEBUG:
         </div>
         <div style={{ color: '#a3e635' }}>
-          Alerts: {alerts.length} | Students: {students.length}
+          Alerts in State: {alerts.length}
         </div>
         <div style={{ color: '#fbbf24', marginTop: '4px' }}>
-          Last: {lastMessage}
+          Last Message: {lastMessage}
+        </div>
+        <div style={{ color: '#f87171', marginTop: '4px' }}>
+          Press F12 to see detailed console logs
         </div>
       </div>
 
-      {/* Chat */}
+      {/* Chat Sidebar */}
       {showChat && (
         <div style={{
           position: 'fixed',
@@ -586,7 +611,7 @@ export default function TeacherPage() {
               disabled={!messageInput.trim()}
               style={{
                 padding: '12px 20px',
-                background: messageInput.trim() ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : '#d1d5db',
+                background: messageInput.trim() ? 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' : '#d1d5db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
@@ -601,14 +626,14 @@ export default function TeacherPage() {
         </div>
       )}
 
-      {/* Students & Alerts */}
+      {/* MAIN DASHBOARD LAYOUT */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '20px',
         marginBottom: '20px',
       }}>
-        {/* Students */}
+        {/* LEFT SIDE - Students List */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
@@ -620,6 +645,9 @@ export default function TeacherPage() {
             fontWeight: '600',
             color: '#111827',
             marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
             👥 Students ({students.length})
           </h3>
@@ -635,7 +663,7 @@ export default function TeacherPage() {
               fontSize: '14px',
             }}>
               <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-              <div>No students yet</div>
+              <div>No students connected yet</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '600px', overflowY: 'auto' }}>
@@ -656,8 +684,11 @@ export default function TeacherPage() {
                         <div style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
                           {student.name}
                         </div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                          ID: {student.id.substring(0, 10)}...
+                        </div>
                         <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
-                          {formatTimeAgoIST(student.last_update)}
+                          Updated: {formatTimeAgoIST(student.last_update)}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -693,7 +724,7 @@ export default function TeacherPage() {
           )}
         </div>
 
-        {/* Alerts */}
+        {/* RIGHT SIDE - Real-Time Alerts */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
@@ -711,18 +742,21 @@ export default function TeacherPage() {
               fontWeight: '600',
               color: '#111827',
               margin: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
             }}>
               🚨 Real-Time Alerts
               {alerts.length > 0 && (
                 <span style={{
-                  marginLeft: '8px',
                   padding: '4px 12px',
                   backgroundColor: '#ef4444',
                   color: 'white',
                   borderRadius: '12px',
                   fontSize: '14px',
+                  animation: 'pulse 2s ease-in-out infinite',
                 }}>
-                  {alerts.length}
+                  {alerts.length} Active
                 </span>
               )}
             </h3>
@@ -745,7 +779,13 @@ export default function TeacherPage() {
             )}
           </div>
 
-          <div style={{ maxHeight: '600px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{
+            maxHeight: '600px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
             {alerts.length === 0 ? (
               <div style={{
                 display: 'flex',
@@ -757,7 +797,8 @@ export default function TeacherPage() {
                 fontSize: '14px',
               }}>
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                <div>No active alerts</div>
+                <div style={{ fontWeight: '600' }}>No active alerts</div>
+                <div style={{ marginTop: '8px' }}>All students are attentive</div>
               </div>
             ) : (
               alerts.map((alert) => (
@@ -769,27 +810,36 @@ export default function TeacherPage() {
                     border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
                     borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
                     borderRadius: '12px',
+                    animation: 'slideIn 0.3s ease-out',
                   }}
                 >
                   <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'flex-start',
                     marginBottom: '8px',
                   }}>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: '#111827',
-                    }}>
-                      {getSeverityIcon(alert.severity)} {alert.student_name}
+                    <div>
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        color: '#111827',
+                        marginBottom: '4px'
+                      }}>
+                        {getSeverityIcon(alert.severity)} {alert.student_name}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                        {alert.alert_type === 'drowsy' ? 'Drowsy' : 'Distracted'}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                    <div style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>
                       {formatTimeAgoIST(alert.timestamp)}
                     </div>
                   </div>
                   <div style={{
                     fontSize: '14px',
                     color: '#4b5563',
+                    fontWeight: '500'
                   }}>
                     {alert.message}
                   </div>
@@ -800,7 +850,7 @@ export default function TeacherPage() {
         </div>
       </div>
 
-      {/* Student Cameras */}
+      {/* Cameras Section */}
       <div style={{
         backgroundColor: 'white',
         borderRadius: '16px',
@@ -822,7 +872,7 @@ export default function TeacherPage() {
             fontSize: '14px',
           }}>
             <div style={{ fontSize: '64px', marginBottom: '16px' }}>📹</div>
-            <div>No students</div>
+            <div style={{ fontWeight: '600' }}>No students connected</div>
           </div>
         ) : (
           <div style={{
@@ -897,15 +947,19 @@ export default function TeacherPage() {
                 </div>
 
                 <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
                   padding: '6px 12px',
                   backgroundColor: getStatusColor(student.status),
                   color: 'white',
                   borderRadius: '8px',
                   fontSize: '12px',
                   fontWeight: '600',
-                  textAlign: 'center',
                 }}>
-                  {getStatusIcon(student.status)} {getStatusLabel(student.status)}
+                  <span>{getStatusIcon(student.status)}</span>
+                  <span>{getStatusLabel(student.status)}</span>
                 </div>
               </div>
             ))}
