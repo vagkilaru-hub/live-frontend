@@ -154,57 +154,106 @@ export default function TeacherPage() {
     }
   }, [roomId]);
 
+  
+
   const startTeacherCamera = async () => {
-    try {
-      console.log('📹 Starting teacher camera for streaming...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false
+  try {
+    console.log('📹 Starting teacher camera for streaming...');
+    
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: 'user'
+      },
+      audio: false
+    });
+
+    if (!videoRef.current) {
+      console.error('❌ Video ref not available');
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+
+    videoRef.current.srcObject = stream;
+    streamRef.current = stream;
+
+    // ✅ CRITICAL: Wait for video to be fully loaded
+    await new Promise((resolve) => {
+      videoRef.current.onloadedmetadata = async () => {
+        try {
+          await videoRef.current.play();
+          console.log('✅ Video playing, dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+          resolve();
+        } catch (err) {
+          console.error('❌ Error playing video:', err);
+          resolve();
+        }
+      };
+    });
+
+    // ✅ CRITICAL: Wait additional time for first frame
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    console.log('✅ Starting frame capture...');
+    console.log('Video ready state:', videoRef.current.readyState);
+
+    // Start sending frames every 100ms (10 FPS)
+    frameIntervalRef.current = setInterval(() => {
+      captureAndSendFrame();
+    }, 100);
+
+  } catch (error) {
+    console.error('❌ Camera error:', error);
+    alert('Could not access camera: ' + error.message);
+  }
+};
+
+const captureAndSendFrame = () => {
+  if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected()) {
+    return;
+  }
+
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
+
+  // ✅ CRITICAL: Check video is ready
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    console.warn('⚠️ Video dimensions not ready yet');
+    return;
+  }
+
+  if (video.readyState < 2) { // Need at least HAVE_CURRENT_DATA
+    console.warn('⚠️ Video not ready, state:', video.readyState);
+    return;
+  }
+
+  const context = canvas.getContext('2d');
+
+  // Set canvas size to match video
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  try {
+    // Draw video frame to canvas
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert to JPEG base64
+    const frameData = canvas.toDataURL('image/jpeg', 0.7);
+
+    // ✅ CRITICAL: Verify frame has actual data
+    if (frameData && frameData.length > 5000) { // Minimum size check
+      wsRef.current.send({
+        type: 'teacher_camera_frame',
+        frame: frameData
       });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        console.log('✅ Teacher camera started, capturing frames...');
-
-        // Start sending frames every 100ms (10 FPS)
-        frameIntervalRef.current = setInterval(() => {
-          captureAndSendFrame();
-        }, 100);
-      }
-    } catch (error) {
-      console.error('❌ Camera error:', error);
-      alert('Could not access camera: ' + error.message);
+    } else {
+      console.warn('⚠️ Frame data too small, skipping');
     }
-  };
-
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected()) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      try {
-        const frameData = canvas.toDataURL('image/jpeg', 0.6);
-        wsRef.current.send({
-          type: 'teacher_camera_frame',
-          frame: frameData
-        });
-      } catch (err) {
-        console.error('Frame capture error:', err);
-      }
-    }
-  };
+  } catch (err) {
+    console.error('❌ Frame capture error:', err);
+  }
+};
 
   const stopTeacherCamera = () => {
     console.log('🛑 Stopping teacher camera...');
