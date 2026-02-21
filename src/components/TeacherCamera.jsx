@@ -44,28 +44,54 @@ export default function TeacherCamera({ onClose, wsManager }) {
   };
 
   const sendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsManager?.isConnected()) return;
+  console.log('🔄 sendFrame called');
+  
+  if (!videoRef.current) {
+    console.error('❌ No videoRef');
+    return;
+  }
+  
+  if (!canvasRef.current) {
+    console.error('❌ No canvasRef');
+    return;
+  }
+  
+  if (!wsManager?.isConnected()) {
+    console.error('❌ WebSocket not connected');
+    return;
+  }
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
 
-    if (video.videoWidth === 0 || video.readyState < 2) return;
+  console.log('📹 Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+  console.log('📹 Video readyState:', video.readyState);
 
-    canvas.width = 480;
-    canvas.height = 270;
+  if (video.videoWidth === 0 || video.readyState < 2) {
+    console.warn('⚠️ Video not ready yet');
+    return;
+  }
 
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, 480, 270);
+  canvas.width = 480;
+  canvas.height = 270;
 
-    const frame = canvas.toDataURL('image/jpeg', 0.4);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, 480, 270);
 
-    if (frame && frame.length > 3000) {
-      wsManager.send({
-        type: 'teacher_camera_frame',
-        frame: frame
-      });
-    }
-  };
+  const frame = canvas.toDataURL('image/jpeg', 0.4);
+
+  console.log('📦 Frame size:', frame.length, 'bytes');
+
+  if (frame && frame.length > 3000) {
+    wsManager.send({
+      type: 'teacher_camera_frame',
+      frame: frame
+    });
+    console.log('✅ Frame sent to backend!');
+  } else {
+    console.error('❌ Frame too small:', frame?.length);
+  }
+};
 
   const stopCamera = () => {
     setIsStreaming(false);
