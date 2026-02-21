@@ -142,8 +142,11 @@ export default function TeacherPage() {
         break;
 
       default:
-        console.log('Unknown message type:', message.type);
-        break;
+  // ✅ Ignore heartbeat messages
+  if (message.type !== 'heartbeat' && message.type !== 'heartbeat_ack') {
+    console.log('Unknown message:', message.type);
+  }
+  break;
     }
   }, []);
 
