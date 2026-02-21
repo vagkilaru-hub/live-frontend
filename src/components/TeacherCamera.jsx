@@ -1,100 +1,131 @@
 import { useState, useRef, useEffect } from 'react';
 
 export default function TeacherCamera({ onClose, wsManager }) {
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [frameCount, setFrameCount] = useState(0);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const intervalRef = useRef(null);
-  const frameCountRef = useRef(0);
 
   useEffect(() => {
-    let mounted = true;
+    console.log('🎬 TeacherCamera mounted');
+    console.log('📡 WebSocket status:', wsManager?.isConnected());
 
-    const init = async () => {
+    const startStreaming = async () => {
       try {
-        console.log('📹 Requesting camera access...');
-        
+        // Get camera
+        console.log('📹 Requesting camera...');
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 360 },
           audio: false
         });
 
-        if (!mounted) {
-          stream.getTracks().forEach(t => t.stop());
+        console.log('✅ Camera granted');
+        
+        const video = videoRef.current;
+        if (!video) {
+          console.error('❌ No video element');
           return;
         }
 
-        console.log('✅ Camera access granted');
-        
-        const video = videoRef.current;
         video.srcObject = stream;
         streamRef.current = stream;
 
-        // Wait for video ready
+        // Wait for video to load
         video.onloadedmetadata = () => {
+          console.log('📺 Video metadata loaded');
           video.play().then(() => {
-            console.log('✅ Video playing:', video.videoWidth, 'x', video.videoHeight);
+            console.log('▶️ Video playing');
             
+            // Wait 1 second then start interval
             setTimeout(() => {
-              if (!mounted) return;
+              console.log('⏰ Starting interval...');
               
-              setIsStreaming(true);
-              console.log('🎬 Starting frame capture interval...');
-              
-              // Send frames every 500ms
               intervalRef.current = setInterval(() => {
-                if (!wsManager?.isConnected()) {
-                  console.warn('⚠️ WebSocket not connected');
-                  return;
-                }
-
-                const canvas = canvasRef.current;
-                if (!canvas) {
-                  console.warn('⚠️ No canvas');
-                  return;
-                }
-
-                const ctx = canvas.getContext('2d');
-                canvas.width = 480;
-                canvas.height = 270;
-
-                ctx.drawImage(video, 0, 0, 480, 270);
-                const frameData = canvas.toDataURL('image/jpeg', 0.5);
-
-                if (frameData && frameData.length > 3000) {
-                  wsManager.send({
-                    type: 'teacher_camera_frame',
-                    frame: frameData
-                  });
-                  
-                  frameCountRef.current++;
-                  if (frameCountRef.current % 10 === 0) {
-                    console.log(`✅ Sent ${frameCountRef.current} frames`);
-                  }
-                }
+                captureFrame();
               }, 500);
               
+              console.log('✅ Interval started:', intervalRef.current);
             }, 1000);
           });
         };
 
       } catch (err) {
         console.error('❌ Camera error:', err);
-        alert('Camera access denied');
+        alert('Camera access denied!');
       }
     };
 
-    init();
+    const captureFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
 
+      if (!video || !canvas) {
+        console.error('❌ Missing refs');
+        return;
+      }
+
+      if (!wsManager || !wsManager.isConnected()) {
+        console.error('❌ WebSocket not connected');
+        return;
+      }
+
+      if (video.readyState !== 4) {
+        console.warn('⚠️ Video not ready:', video.readyState);
+        return;
+      }
+
+      // Capture frame
+      const ctx = canvas.getContext('2d');
+      canvas.width = 480;
+      canvas.height = 270;
+      ctx.drawImage(video, 0, 0, 480, 270);
+
+      const frameData = canvas.toDataURL('image/jpeg', 0.5);
+
+      if (frameData.length < 3000) {
+        console.error('❌ Frame too small:', frameData.length);
+        return;
+      }
+
+      // Send via WebSocket
+      try {
+        wsManager.send({
+          type: 'teacher_camera_frame',
+          frame: frameData
+        });
+        
+        setFrameCount(prev => {
+          const newCount = prev + 1;
+          if (newCount % 5 === 0) {
+            console.log(`✅ Sent ${newCount} frames`);
+          }
+          return newCount;
+        });
+      } catch (err) {
+        console.error('❌ Send error:', err);
+      }
+    };
+
+    startStreaming();
+
+    // Cleanup
     return () => {
-      mounted = false;
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      console.log('🧹 Cleaning up...');
+      
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        console.log('⏹️ Interval cleared');
+      }
+      
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
+        console.log('📹 Camera stopped');
       }
+
       if (wsManager?.isConnected()) {
         wsManager.send({ type: 'teacher_camera_stopped' });
+        console.log('📤 Stop signal sent');
       }
     };
   }, [wsManager]);
@@ -119,9 +150,9 @@ export default function TeacherCamera({ onClose, wsManager }) {
       backgroundColor: 'white',
       borderRadius: '16px',
       boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-      overflow: 'hidden',
       width: '400px'
     }}>
+      {/* Header */}
       <div style={{
         padding: '12px 16px',
         backgroundColor: '#8b5cf6',
@@ -129,19 +160,24 @@ export default function TeacherCamera({ onClose, wsManager }) {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div style={{ color: 'white', fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{
+          color: 'white',
+          fontWeight: '600',
+          fontSize: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
           📹 My Camera
-          {isStreaming && (
-            <span style={{
-              fontSize: '10px',
-              padding: '2px 8px',
-              backgroundColor: '#ef4444',
-              borderRadius: '12px',
-              fontWeight: '700'
-            }}>
-              ● LIVE ({frameCountRef.current})
-            </span>
-          )}
+          <span style={{
+            fontSize: '10px',
+            padding: '2px 8px',
+            backgroundColor: frameCount > 0 ? '#22c55e' : '#ef4444',
+            borderRadius: '12px',
+            fontWeight: '700'
+          }}>
+            ● LIVE ({frameCount})
+          </span>
         </div>
         <button onClick={handleClose} style={{
           padding: '4px 8px',
@@ -149,13 +185,13 @@ export default function TeacherCamera({ onClose, wsManager }) {
           color: 'white',
           border: 'none',
           borderRadius: '6px',
-          cursor: 'pointer',
-          fontSize: '14px'
+          cursor: 'pointer'
         }}>
           ✕
         </button>
       </div>
 
+      {/* Video */}
       <video
         ref={videoRef}
         autoPlay
@@ -170,20 +206,20 @@ export default function TeacherCamera({ onClose, wsManager }) {
         }}
       />
 
+      {/* Hidden canvas */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {isStreaming && (
-        <div style={{
-          padding: '8px',
-          backgroundColor: '#22c55e',
-          color: 'white',
-          fontSize: '11px',
-          fontWeight: '600',
-          textAlign: 'center'
-        }}>
-          ✓ Streaming to students - Frame #{frameCountRef.current}
-        </div>
-      )}
+      {/* Status */}
+      <div style={{
+        padding: '8px',
+        backgroundColor: frameCount > 0 ? '#22c55e' : '#f59e0b',
+        color: 'white',
+        fontSize: '11px',
+        fontWeight: '600',
+        textAlign: 'center'
+      }}>
+        {frameCount > 0 ? `✓ Streaming (${frameCount} frames sent)` : '⏳ Starting...'}
+      </div>
     </div>
   );
 }
