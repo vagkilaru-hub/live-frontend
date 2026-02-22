@@ -128,67 +128,77 @@ export default function TeacherPage() {
 
   // ✅ AUTO TEACHER CAMERA STREAMING
   useEffect(() => {
-    if (!isConnected || !wsRef.current || !roomId) return;
+  // ✅ SMART AUTO TEACHER CAMERA - Alternates with student frames
+useEffect(() => {
+  if (!isConnected || !wsRef.current || !roomId) return;
 
-    let stream = null;
-    let interval = null;
-    const canvas = document.createElement('canvas');
-    const video = document.createElement('video');
+  let stream = null;
+  let interval = null;
+  let frameCount = 0;
+  const canvas = document.createElement('canvas');
+  const video = document.createElement('video');
 
-    const startAutoStream = async () => {
-      try {
-        console.log('🎥 AUTO-STARTING TEACHER CAMERA...');
-        
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 640, height: 360 } 
-        });
-        
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play();
-        
-        console.log('✅ TEACHER CAMERA AUTO-STARTED');
-        
-        setTimeout(() => {
-          interval = setInterval(() => {
-            if (!wsRef.current?.isConnected()) return;
-            
-            canvas.width = 480;
-            canvas.height = 270;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, 480, 270);
-            
-            const frame = canvas.toDataURL('image/jpeg', 0.4);
-            
-            if (frame.length > 3000) {
-              wsRef.current.send({
-                type: 'teacher_camera_frame',
-                frame: frame
-              });
-            }
-          }, 1000);
+  const startAutoStream = async () => {
+    try {
+      console.log('🎥 AUTO-STARTING TEACHER CAMERA...');
+      
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 480, height: 270 }
+      });
+      
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      await video.play();
+      
+      console.log('✅ TEACHER CAMERA AUTO-STARTED');
+      
+      setTimeout(() => {
+        interval = setInterval(() => {
+          if (!wsRef.current?.isConnected()) return;
           
-          console.log('✅ TEACHER CAMERA STREAMING TO STUDENTS');
-        }, 2000);
+          // ✅ Only send every 3rd frame to reduce load
+          frameCount++;
+          if (frameCount % 3 !== 0) return;
+          
+          canvas.width = 320;
+          canvas.height = 180;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, 320, 180);
+          
+          const frame = canvas.toDataURL('image/jpeg', 0.25); // 25% quality
+          
+          if (frame.length > 2000) {
+            wsRef.current.send({
+              type: 'teacher_camera_frame',
+              frame: frame
+            });
+            
+            if (frameCount % 15 === 0) {
+              console.log('✅ Teacher frame sent');
+            }
+          }
+        }, 1000); // Check every second, but only send every 3rd check
         
-      } catch (err) {
-        console.error('❌ Auto camera failed:', err);
-      }
-    };
+        console.log('✅ TEACHER CAMERA STREAMING (optimized)');
+      }, 2000);
+      
+    } catch (err) {
+      console.error('❌ Auto camera failed:', err);
+    }
+  };
 
-    startAutoStream();
+  startAutoStream();
 
-    return () => {
-      console.log('🛑 Stopping teacher camera');
-      if (interval) clearInterval(interval);
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      if (wsRef.current?.isConnected()) {
-        wsRef.current.send({ type: 'teacher_camera_stopped' });
-      }
-    };
-  }, [isConnected, roomId]);
-
+  return () => {
+    console.log('🛑 Stopping teacher camera');
+    if (interval) clearInterval(interval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (wsRef.current?.isConnected()) {
+      wsRef.current.send({ type: 'teacher_camera_stopped' });
+    }
+  };
+}, [isConnected, roomId]);
   const sendMessage = () => {
     if (messageInput.trim() && wsRef.current?.isConnected()) {
       wsRef.current.send({
