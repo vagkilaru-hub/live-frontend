@@ -8,17 +8,15 @@ export default function TeacherCamera({ onClose, wsManager }) {
   const intervalRef = useRef(null);
 
   useEffect(() => {
-    console.log('🎬🎬🎬 TEACHER CAMERA STARTING 🎬🎬🎬');
-    console.log('📡 WebSocket:', wsManager?.isConnected());
+    console.log('🎬 Teacher camera starting');
 
     let mounted = true;
 
     const startCamera = async () => {
       try {
-        console.log('📹 Requesting camera...');
-        
+        // ✅ Lower resolution for better performance
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 360 },
+          video: { width: 480, height: 270 },
           audio: false
         });
 
@@ -32,58 +30,39 @@ export default function TeacherCamera({ onClose, wsManager }) {
         const video = videoRef.current;
         const canvas = canvasRef.current;
 
-        if (!video || !canvas) {
-          console.error('❌ Missing video/canvas');
-          return;
-        }
+        if (!video || !canvas) return;
 
         video.srcObject = stream;
         streamRef.current = stream;
 
         video.onloadedmetadata = () => {
-          console.log('📺 Video ready');
-          
           video.play().then(() => {
             console.log('▶️ Video playing');
 
             setTimeout(() => {
               if (!mounted) return;
 
-              console.log('⏰ Starting frame capture...');
-
               intervalRef.current = setInterval(() => {
-                if (!videoRef.current || !canvasRef.current || !wsManager) {
-                  console.warn('⚠️ Missing refs or wsManager');
-                  return;
-                }
-
-                if (!wsManager.isConnected()) {
-                  console.warn('⚠️ WebSocket disconnected');
+                if (!videoRef.current || !canvasRef.current || !wsManager?.isConnected()) {
                   return;
                 }
 
                 const v = videoRef.current;
                 const c = canvasRef.current;
 
-                if (v.readyState !== 4) {
-                  console.warn('⚠️ Video not ready');
-                  return;
-                }
+                if (v.readyState !== 4) return;
 
-                // Capture frame
-                c.width = 480;
-                c.height = 270;
+                // ✅ Smaller canvas size
+                c.width = 320;
+                c.height = 180;
                 const ctx = c.getContext('2d');
-                ctx.drawImage(v, 0, 0, 480, 270);
+                ctx.drawImage(v, 0, 0, 320, 180);
 
-                const frame = c.toDataURL('image/jpeg', 0.5);
+                // ✅ Lower quality (30%)
+                const frame = c.toDataURL('image/jpeg', 0.3);
 
-                if (frame.length < 3000) {
-                  console.error('❌ Frame too small');
-                  return;
-                }
+                if (frame.length < 3000) return;
 
-                // Send frame
                 try {
                   wsManager.send({
                     type: 'teacher_camera_frame',
@@ -93,40 +72,33 @@ export default function TeacherCamera({ onClose, wsManager }) {
                   setFrameCount(prev => {
                     const newCount = prev + 1;
                     if (newCount % 5 === 0) {
-                      console.log(`✅✅✅ SENT ${newCount} FRAMES`);
+                      console.log(`✅ Sent ${newCount} frames`);
                     }
                     return newCount;
                   });
                 } catch (err) {
-                  console.error('❌ Send error:', err);
+                  console.error('Send error:', err);
                 }
-              }, 500);
+              }, 1000); // ✅ 1 frame per second (was 500ms)
 
-              console.log('✅ Interval started:', intervalRef.current);
+              console.log('✅ Streaming started');
             }, 1000);
           });
         };
 
       } catch (err) {
-        console.error('❌ Camera error:', err);
-        alert('Camera denied: ' + err.message);
+        console.error('Camera error:', err);
       }
     };
 
     startCamera();
 
     return () => {
-      console.log('🧹 Cleanup');
       mounted = false;
-      
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      
+      if (intervalRef.current) clearInterval(intervalRef.current);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
       }
-
       if (wsManager?.isConnected()) {
         wsManager.send({ type: 'teacher_camera_stopped' });
       }
@@ -134,8 +106,6 @@ export default function TeacherCamera({ onClose, wsManager }) {
   }, [wsManager]);
 
   const handleClose = () => {
-    console.log('❌ Close clicked');
-    
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
@@ -143,7 +113,6 @@ export default function TeacherCamera({ onClose, wsManager }) {
     if (wsManager?.isConnected()) {
       wsManager.send({ type: 'teacher_camera_stopped' });
     }
-    
     onClose();
   };
 
@@ -222,7 +191,7 @@ export default function TeacherCamera({ onClose, wsManager }) {
         fontWeight: '600',
         textAlign: 'center'
       }}>
-        {frameCount > 0 ? `✓ Sent ${frameCount} frames` : '⏳ Starting...'}
+        {frameCount > 0 ? `✓ Streaming (${frameCount} frames)` : '⏳ Starting...'}
       </div>
     </div>
   );
