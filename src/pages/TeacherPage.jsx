@@ -127,20 +127,18 @@ export default function TeacherPage() {
   }, [connectWebSocket]);
 
   // ✅ AUTO TEACHER CAMERA STREAMING
-  useEffect(() => {
-  // ✅ SMART AUTO TEACHER CAMERA - Alternates with student frames
+  // ✅ TEACHER CAMERA - Sends on EVEN seconds only
 useEffect(() => {
   if (!isConnected || !wsRef.current || !roomId) return;
 
   let stream = null;
   let interval = null;
-  let frameCount = 0;
   const canvas = document.createElement('canvas');
   const video = document.createElement('video');
 
   const startAutoStream = async () => {
     try {
-      console.log('🎥 AUTO-STARTING TEACHER CAMERA...');
+      console.log('🎥 Starting teacher camera...');
       
       stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: 480, height: 270 }
@@ -151,47 +149,43 @@ useEffect(() => {
       video.playsInline = true;
       await video.play();
       
-      console.log('✅ TEACHER CAMERA AUTO-STARTED');
+      console.log('✅ Teacher camera started');
       
       setTimeout(() => {
         interval = setInterval(() => {
           if (!wsRef.current?.isConnected()) return;
           
-          // ✅ Only send every 3rd frame to reduce load
-          frameCount++;
-          if (frameCount % 3 !== 0) return;
+          // ✅ Only send on EVEN seconds (0, 2, 4, 6, 8...)
+          const currentSecond = new Date().getSeconds();
+          if (currentSecond % 2 !== 0) return;
           
           canvas.width = 320;
           canvas.height = 180;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(video, 0, 0, 320, 180);
           
-          const frame = canvas.toDataURL('image/jpeg', 0.25); // 25% quality
+          const frame = canvas.toDataURL('image/jpeg', 0.3);
           
           if (frame.length > 2000) {
             wsRef.current.send({
               type: 'teacher_camera_frame',
               frame: frame
             });
-            
-            if (frameCount % 15 === 0) {
-              console.log('✅ Teacher frame sent');
-            }
+            console.log('📤 Teacher frame sent');
           }
-        }, 1000); // Check every second, but only send every 3rd check
+        }, 1000); // Check every second
         
-        console.log('✅ TEACHER CAMERA STREAMING (optimized)');
+        console.log('✅ Teacher streaming (even seconds only)');
       }, 2000);
       
     } catch (err) {
-      console.error('❌ Auto camera failed:', err);
+      console.error('Camera error:', err);
     }
   };
 
   startAutoStream();
 
   return () => {
-    console.log('🛑 Stopping teacher camera');
     if (interval) clearInterval(interval);
     if (stream) stream.getTracks().forEach(t => t.stop());
     if (wsRef.current?.isConnected()) {
@@ -199,6 +193,8 @@ useEffect(() => {
     }
   };
 }, [isConnected, roomId]);
+  const startAutoStream = async () => {
+  
   const sendMessage = () => {
     if (messageInput.trim() && wsRef.current?.isConnected()) {
       wsRef.current.send({

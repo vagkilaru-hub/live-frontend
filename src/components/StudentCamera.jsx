@@ -1,413 +1,269 @@
-import { useEffect, useRef, useState } from 'react';
-import { initializeMediaPipe, extractAttentionFeatures } from '../utils/mediapipe';
+import { useRef, useEffect, useState } from 'react';
+import * as faceapi from 'face-api.js';
 
 export default function StudentCamera({ onStatusChange, onFrameCapture }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [status, setStatus] = useState('attentive');
-  const [isActive, setIsActive] = useState(false);
-  const [detectionCount, setDetectionCount] = useState(0);
-  
-  const statusRef = useRef('attentive');
+  const streamRef = useRef(null);
+  const detectionIntervalRef = useRef(null);
   const frameIntervalRef = useRef(null);
-  const mediaPipeRef = useRef(null);
-  const eyeClosedFrames = useRef(0);
-  const lookingAwayFrames = useRef(0);
-  const attentiveFrames = useRef(0);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState('attentive');
 
-  // FINAL OPTIMIZED THRESHOLDS - Lowered for better detection
-  const THRESHOLDS = {
-    // Eye Detection (for drowsiness)
-    EYE_CLOSED: 0.10,        // Eyes must be REALLY closed
-    EYE_OPEN: 0.18,          // Clear threshold for open eyes
-    DROWSY_FRAMES: 12,       // 4 seconds of closed eyes = drowsy
-    
-    // Head Pose Detection (for looking away) - LOWERED THRESHOLDS
-    HEAD_YAW_EXTREME: 25,    // Profile view = looking away (was 50, now 25)
-    HEAD_YAW_MODERATE: 15,   // Moderate turn (was 30, now 15)
-    HEAD_PITCH_DOWN: 20,     // Looking down threshold
-    HEAD_PITCH_UP: 20,       // Looking up threshold
-    
-    // Frame consistency
-    LOOKING_AWAY_FRAMES: 6,  // 2 seconds of head turn = looking away (was 9, now 6)
-    ATTENTIVE_FRAMES: 6,     // 2 seconds of good posture = attentive
-  };
-
+  // Load face-api models
   useEffect(() => {
-    let mounted = true;
-    let stream = null;
-
-    const initializeCamera = async () => {
+    const loadModels = async () => {
       try {
-        console.log('🎥 Starting FINAL OPTIMIZED detection...');
+        console.log('📦 Loading face detection models...');
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            width: 640, 
-            height: 480,
-            facingMode: 'user'
-          } 
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        ]);
+        
+        console.log('✅ Models loaded');
+        setModelsLoaded(true);
+      } catch (err) {
+        console.error('❌ Model loading error:', err);
+      }
+    };
+
+    loadModels();
+  }, []);
+
+  // Start camera and detection
+  useEffect(() => {
+    if (!modelsLoaded) return;
+
+    let mounted = true;
+
+    const startCamera = async () => {
+      try {
+        console.log('📹 Starting student camera...');
+        
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 }
         });
-        
+
         if (!mounted) {
-          stream.getTracks().forEach(track => track.stop());
+          stream.getTracks().forEach(t => t.stop());
           return;
         }
 
+        streamRef.current = stream;
+        
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          
-          videoRef.current.onloadedmetadata = async () => {
-            try {
-              await videoRef.current.play();
-              console.log('✅ Camera started - FINAL DETECTION ACTIVE');
-              setIsActive(true);
-              
-              await initializeMediaPipeDetection();
-              startFrameCapture();
-              
-            } catch (err) {
-              console.error('❌ Error playing video:', err);
-            }
-          };
-        }
+          await videoRef.current.play();
+          console.log('✅ Student camera started');
 
-      } catch (error) {
-        console.error('❌ Camera error:', error);
-        alert('Camera permission denied: ' + error.message);
+          // Wait 2 seconds then start detection
+          setTimeout(() => {
+            if (!mounted) return;
+
+            // ✅ Detection every 3 seconds
+            detectionIntervalRef.current = setInterval(() => {
+              detectAttention();
+            }, 3000);
+
+            // ✅ Frame capture on ODD seconds only (staggered with teacher)
+            frameIntervalRef.current = setInterval(() => {
+              const currentSecond = new Date().getSeconds();
+              if (currentSecond % 2 === 0) return; // Skip even seconds
+              
+              captureFrame();
+            }, 1000);
+
+            console.log('✅ Detection and frame capture started');
+          }, 2000);
+        }
+      } catch (err) {
+        console.error('❌ Camera error:', err);
       }
     };
 
-    const initializeMediaPipeDetection = async () => {
+    const detectAttention = async () => {
+      if (!videoRef.current || !canvasRef.current) return;
+
       try {
-        console.log('🧠 Initializing MediaPipe (FINAL MODE)...');
+        const video = videoRef.current;
         
-        const { faceMesh, camera } = await initializeMediaPipe(
-          videoRef.current,
-          onMediaPipeResults
-        );
+        // Detect face and landmarks
+        const detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks();
+
+        if (!detection) {
+          // No face detected
+          updateStatus('no_face', 0.8);
+          return;
+        }
+
+        const landmarks = detection.landmarks;
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+        const nose = landmarks.getNose();
+
+        // Calculate Eye Aspect Ratio (EAR)
+        const ear = calculateEAR(leftEye, rightEye);
         
-        mediaPipeRef.current = { faceMesh, camera };
-        console.log('✅ FINAL detection calibrated and ready');
-        
-      } catch (error) {
-        console.error('❌ MediaPipe initialization failed:', error);
-        console.warn('⚠️ Falling back to no detection mode');
+        // Calculate head pose (yaw and pitch)
+        const { yaw, pitch } = calculateHeadPose(landmarks);
+
+        console.log(`📊 Detection: EAR=${ear.toFixed(3)}, Yaw=${yaw}°, Pitch=${pitch}°`);
+
+        // Determine status
+        let status = 'attentive';
+        let confidence = 0.95;
+
+        // Check for drowsiness (eyes closed)
+        if (ear < 0.2) {
+          status = 'drowsy';
+          confidence = 0.9;
+        }
+        // Check for looking away (head turned)
+        else if (Math.abs(yaw) > 25 || Math.abs(pitch) > 25) {
+          status = 'looking_away';
+          confidence = 0.85;
+        }
+
+        updateStatus(status, confidence);
+
+      } catch (err) {
+        console.error('❌ Detection error:', err);
       }
     };
 
-    const onMediaPipeResults = (results) => {
-      if (!mounted) return;
-      
-      drawDetection(results);
-      const features = extractAttentionFeatures(results);
-      
-      if (!features) {
-        updateStatus('no_face', 0);
-        return;
-      }
-
-      const detectionResult = analyzeAttention(features);
-      updateStatus(detectionResult.status, detectionResult.confidence);
-      setDetectionCount(prev => prev + 1);
+    const calculateEAR = (leftEye, rightEye) => {
+      // Eye Aspect Ratio calculation
+      const leftEAR = getEyeAspectRatio(leftEye);
+      const rightEAR = getEyeAspectRatio(rightEye);
+      return (leftEAR + rightEAR) / 2;
     };
 
-    const analyzeAttention = (features) => {
-      const { eye_aspect_ratio, head_pose } = features;
-      
-      console.log('📊 Detection:', {
-        EAR: eye_aspect_ratio.toFixed(3),
-        Yaw: head_pose.yaw + '°',
-        Pitch: head_pose.pitch + '°',
-        Current: statusRef.current
-      });
-
-      // PRIORITY 1: Check for DROWSINESS
-      if (eye_aspect_ratio < THRESHOLDS.EYE_CLOSED) {
-        eyeClosedFrames.current++;
-        
-        if (eyeClosedFrames.current >= THRESHOLDS.DROWSY_FRAMES) {
-          console.log('😴 DROWSY - Eyes closed for', (eyeClosedFrames.current / 3).toFixed(1), 'sec');
-          lookingAwayFrames.current = 0;
-          attentiveFrames.current = 0;
-          return { status: 'drowsy', confidence: 0.95 };
-        } else {
-          console.log('⏳ Eyes closing...', eyeClosedFrames.current, '/', THRESHOLDS.DROWSY_FRAMES);
-          return { status: statusRef.current, confidence: 0.7 };
-        }
-      } else if (eye_aspect_ratio > THRESHOLDS.EYE_OPEN) {
-        eyeClosedFrames.current = 0;
-      }
-
-      // PRIORITY 2: Check for LOOKING AWAY - LOWERED THRESHOLDS
-      const absYaw = Math.abs(head_pose.yaw);
-      const absPitch = Math.abs(head_pose.pitch);
-      
-      // More sensitive detection with lower thresholds
-      const isProfileView = absYaw > THRESHOLDS.HEAD_YAW_EXTREME;  // 25° instead of 50°
-      const isModeratelyTurned = absYaw > THRESHOLDS.HEAD_YAW_MODERATE;  // 15° instead of 30°
-      const isLookingUpOrDown = absPitch > THRESHOLDS.HEAD_PITCH_DOWN;
-      
-      const isLookingAway = isProfileView || (isModeratelyTurned && isLookingUpOrDown);
-
-      if (isLookingAway) {
-        lookingAwayFrames.current++;
-        attentiveFrames.current = 0;
-        
-        if (lookingAwayFrames.current >= THRESHOLDS.LOOKING_AWAY_FRAMES) {
-          console.log('👀 LOOKING AWAY - Yaw:', head_pose.yaw + '° Pitch:', head_pose.pitch + '° (' + (lookingAwayFrames.current / 3).toFixed(1) + 's)');
-          eyeClosedFrames.current = 0;
-          return { status: 'looking_away', confidence: 0.90 };
-        } else {
-          console.log('⏳ Head turning...', lookingAwayFrames.current, '/', THRESHOLDS.LOOKING_AWAY_FRAMES);
-          return { status: statusRef.current, confidence: 0.75 };
-        }
-      } else {
-        lookingAwayFrames.current = 0;
-      }
-
-      // PRIORITY 3: ATTENTIVE
-      if (eyeClosedFrames.current === 0 && lookingAwayFrames.current === 0) {
-        attentiveFrames.current++;
-        
-        if (attentiveFrames.current >= THRESHOLDS.ATTENTIVE_FRAMES) {
-          if (statusRef.current !== 'attentive') {
-            console.log('✅ ATTENTIVE - Face forward, eyes open for', (attentiveFrames.current / 3).toFixed(1), 's');
-          }
-          return { status: 'attentive', confidence: 0.95 };
-        } else {
-          console.log('⏳ Returning to attentive...', attentiveFrames.current, '/', THRESHOLDS.ATTENTIVE_FRAMES);
-          return { status: statusRef.current, confidence: 0.80 };
-        }
-      }
-
-      return { status: statusRef.current, confidence: 0.70 };
+    const getEyeAspectRatio = (eye) => {
+      const vertical1 = distance(eye[1], eye[5]);
+      const vertical2 = distance(eye[2], eye[4]);
+      const horizontal = distance(eye[0], eye[3]);
+      return (vertical1 + vertical2) / (2.0 * horizontal);
     };
 
-    const updateStatus = (newStatus, confidence) => {
-      if (newStatus !== statusRef.current) {
-        console.log('╔════════════════════════════════════════╗');
-        console.log('║  STATUS CHANGE: ' + statusRef.current + ' → ' + newStatus);
-        console.log('║  Confidence: ' + (confidence * 100).toFixed(0) + '%');
-        console.log('╚════════════════════════════════════════╝');
-        
-        statusRef.current = newStatus;
-        setStatus(newStatus);
-        
-        if (newStatus === 'attentive') {
-          eyeClosedFrames.current = 0;
-          lookingAwayFrames.current = 0;
-        } else if (newStatus === 'drowsy') {
-          lookingAwayFrames.current = 0;
-          attentiveFrames.current = 0;
-        } else if (newStatus === 'looking_away') {
-          eyeClosedFrames.current = 0;
-          attentiveFrames.current = 0;
-        }
-        
-        if (onStatusChange) {
-          onStatusChange({
-            status: newStatus,
-            confidence: confidence,
-            timestamp: Date.now()
-          });
-          console.log('📤 Sent to backend:', newStatus);
-        }
-      }
+    const distance = (point1, point2) => {
+      const dx = point1.x - point2.x;
+      const dy = point1.y - point2.y;
+      return Math.sqrt(dx * dx + dy * dy);
     };
 
-    const drawDetection = (results) => {
-      if (!canvasRef.current || !videoRef.current) return;
+    const calculateHeadPose = (landmarks) => {
+      const nose = landmarks.getNose();
+      const leftEye = landmarks.getLeftEye();
+      const rightEye = landmarks.getRightEye();
+      const jawline = landmarks.getJawOutline();
+
+      // Calculate yaw (left/right head turn)
+      const eyeCenter = {
+        x: (leftEye[0].x + rightEye[3].x) / 2,
+        y: (leftEye[0].y + rightEye[3].y) / 2
+      };
+      const noseCenter = nose[3];
+      const yaw = Math.round((noseCenter.x - eyeCenter.x) * 0.5);
+
+      // Calculate pitch (up/down head tilt)
+      const eyeY = eyeCenter.y;
+      const noseY = noseCenter.y;
+      const pitch = Math.round((noseY - eyeY) * 0.3);
+
+      return { yaw, pitch };
+    };
+
+    const updateStatus = (status, confidence) => {
+      setCurrentStatus(status);
       
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      const video = videoRef.current;
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-      ctx.restore();
-
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        
-        ctx.fillStyle = '#00FF00';
-        const keyPoints = [1, 33, 133, 362, 263, 152];
-
-        keyPoints.forEach(idx => {
-          const point = landmarks[idx];
-          const x = canvas.width - (point.x * canvas.width);
-          const y = point.y * canvas.height;
-          
-          ctx.beginPath();
-          ctx.arc(x, y, 4, 0, 2 * Math.PI);
-          ctx.fill();
+      if (onStatusChange) {
+        onStatusChange({
+          status,
+          confidence,
+          timestamp: new Date().toISOString()
         });
-
-        ctx.strokeStyle = '#00FF0088';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const faceOval = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
-        faceOval.forEach((idx, i) => {
-          const point = landmarks[idx];
-          const x = canvas.width - (point.x * canvas.width);
-          const y = point.y * canvas.height;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.stroke();
       }
-    };
-
-    const startFrameCapture = () => {
-      frameIntervalRef.current = setInterval(() => {
-        captureFrame();
-      }, 2000);
     };
 
     const captureFrame = () => {
-      if (!canvasRef.current) return;
-      
-      try {
-        const frameData = canvasRef.current.toDataURL('image/jpeg', 0.7);
-        if (onFrameCapture && frameData) {
-          onFrameCapture(frameData);
-        }
-      } catch (err) {
-        console.error('Frame capture error:', err);
+      if (!videoRef.current || !canvasRef.current) return;
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      canvas.width = 320;
+      canvas.height = 240;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, 320, 240);
+
+      const frame = canvas.toDataURL('image/jpeg', 0.3);
+
+      if (frame.length > 2000 && onFrameCapture) {
+        onFrameCapture(frame);
       }
     };
 
-    initializeCamera();
+    startCamera();
 
     return () => {
+      console.log('🧹 Cleaning up student camera');
       mounted = false;
-      console.log('🛑 Stopping detection');
+      
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
       
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current);
       }
       
-      if (mediaPipeRef.current && mediaPipeRef.current.camera) {
-        mediaPipeRef.current.camera.stop();
-      }
-      
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
       }
     };
-  }, [onStatusChange, onFrameCapture]);
-
-  const getStatusColor = () => {
-    switch (status) {
-      case 'attentive': return '#22c55e';
-      case 'looking_away': return '#f59e0b';
-      case 'drowsy': return '#ef4444';
-      case 'no_face': return '#6b7280';
-      default: return '#6b7280';
-    }
-  };
-
-  const getStatusText = () => {
-    switch (status) {
-      case 'attentive': return '✓ ATTENTIVE';
-      case 'looking_away': return '👀 LOOKING AWAY';
-      case 'drowsy': return '😴 DROWSY';
-      case 'no_face': return '❌ NO FACE';
-      default: return 'DETECTING...';
-    }
-  };
+  }, [modelsLoaded, onStatusChange, onFrameCapture]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <video
         ref={videoRef}
-        style={{ display: 'none' }}
-        playsInline
         autoPlay
+        playsInline
         muted
-      />
-      <canvas
-        ref={canvasRef}
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          backgroundColor: '#000',
+          transform: 'scaleX(-1)'
         }}
       />
       
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      
+      {/* Status Indicator */}
       <div style={{
         position: 'absolute',
-        bottom: '0',
-        left: '0',
-        right: '0',
-        padding: '10px',
-        backgroundColor: getStatusColor(),
-        color: 'white',
-        textAlign: 'center',
-        fontSize: '14px',
-        fontWeight: '700',
-        letterSpacing: '1px',
-      }}>
-        {getStatusText()}
-      </div>
-
-      <div style={{
-        position: 'absolute',
-        top: '8px',
-        left: '8px',
+        bottom: '10px',
+        left: '10px',
         padding: '6px 12px',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        color: '#fff',
-        borderRadius: '8px',
+        backgroundColor: 
+          currentStatus === 'attentive' ? '#22c55e' :
+          currentStatus === 'drowsy' ? '#f59e0b' :
+          currentStatus === 'looking_away' ? '#ef4444' : '#6b7280',
+        color: 'white',
+        borderRadius: '20px',
         fontSize: '11px',
-        fontFamily: 'monospace',
-        fontWeight: 'bold',
+        fontWeight: '600',
+        textTransform: 'uppercase'
       }}>
-        Detections: {detectionCount} | {isActive ? '🚀 FINAL' : '⏳ Loading...'}
+        {currentStatus === 'attentive' ? '✅ Attentive' :
+         currentStatus === 'drowsy' ? '😴 Drowsy' :
+         currentStatus === 'looking_away' ? '👀 Looking Away' : '❓ No Face'}
       </div>
-
-      {!isActive && (
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'rgba(0, 0, 0, 0.9)',
-          color: 'white',
-          fontSize: '16px',
-          fontWeight: '600',
-          gap: '16px',
-        }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '4px solid #fff',
-            borderTop: '4px solid transparent',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-          }} />
-          <div>Starting AI detection...</div>
-          <style>{`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}</style>
-        </div>
-      )}
     </div>
   );
 }
