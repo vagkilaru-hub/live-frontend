@@ -19,15 +19,13 @@ export default function TeacherPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
-  const [messages, setMessages] = useState([]);
-  const [messageInput, setMessageInput] = useState('');
-  const [showChat, setShowChat] = useState(false);
   const [lastMessage, setLastMessage] = useState('Waiting for messages...');
 
   const wsRef = useRef(null);
-  const chatEndRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const MAX_ALERTS = 50;
+
+  /* ================== WEBSOCKET ================== */
 
   const handleWebSocketMessage = useCallback((message) => {
     setLastMessage(`${message.type} - ${new Date().toLocaleTimeString()}`);
@@ -91,11 +89,6 @@ export default function TeacherPage() {
         });
         break;
 
-      case 'chat_message':
-        setMessages(prev => [...prev, message.data]);
-        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-        break;
-
       default:
         break;
     }
@@ -148,33 +141,33 @@ export default function TeacherPage() {
     high: '🚨'
   }[severity] || 'ℹ️');
 
+  /* ================== UI ================== */
+
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       padding: '20px',
     }}>
 
       {/* HEADER */}
       <div style={{
         backgroundColor: 'white',
-        padding: '20px 24px',
+        padding: '16px 24px',
         marginBottom: '20px',
-        borderRadius: '16px',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+        borderRadius: '12px',
+        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>
-          Live Feedback System
-        </h1>
+        <h1>Live Feedback System</h1>
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <div style={{
-            padding: '8px 16px',
+            padding: '6px 14px',
             backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
-            borderRadius: '20px'
+            borderRadius: '16px'
           }}>
             ● {isConnected ? 'Connected' : 'Reconnecting...'}
           </div>
@@ -194,24 +187,20 @@ export default function TeacherPage() {
         </div>
       </div>
 
-      {/* ROOM CODE */}
-      {roomId && (
-        <div style={{
-          padding: '20px',
-          background: '#dbeafe',
-          borderRadius: '12px',
-          marginBottom: '20px',
-          textAlign: 'center',
-          fontSize: '42px',
-          fontWeight: 'bold',
-          letterSpacing: '8px',
-          fontFamily: 'monospace'
-        }}>
-          {roomId}
-        </div>
-      )}
+      {/* STATS */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: '16px',
+        marginBottom: '20px'
+      }}>
+        <StatCard label="Total Students" value={stats.total} />
+        <StatCard label="Attentive" value={stats.attentive} color="#22c55e" />
+        <StatCard label="Needs Attention" value={stats.needsAttention} color="#f59e0b" />
+        <StatCard label="Active Alerts" value={alerts.length} color="#ef4444" />
+      </div>
 
-      {/* DEBUG PANEL */}
+      {/* DEBUG */}
       <div style={{
         backgroundColor: '#1f2937',
         color: '#10b981',
@@ -226,7 +215,7 @@ export default function TeacherPage() {
         Last: {lastMessage}
       </div>
 
-      {/* SIDE BY SIDE LAYOUT */}
+      {/* SIDE BY SIDE */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
@@ -234,83 +223,62 @@ export default function TeacherPage() {
         marginBottom: '20px',
       }}>
 
-        {/* STUDENTS PANEL */}
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-        }}>
-          <h3>👥 Students ({students.length})</h3>
-
+        {/* STUDENTS */}
+        <Panel title={`👥 Students (${students.length})`}>
           {students.map(student => (
             <div key={student.id}
               style={{
-                padding: '16px',
-                marginTop: '12px',
-                borderRadius: '12px',
-                border: `3px solid ${getStatusColor(student.status)}`
+                padding: '14px',
+                marginBottom: '12px',
+                borderRadius: '8px',
+                border: `2px solid ${getStatusColor(student.status)}`
               }}>
-              <div style={{ fontWeight: '600' }}>{student.name}</div>
+              <strong>{student.name}</strong>
               <div style={{
                 marginTop: '6px',
-                padding: '6px 12px',
+                padding: '4px 10px',
                 backgroundColor: getStatusColor(student.status),
                 color: 'white',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 display: 'inline-block'
               }}>
                 {getStatusIcon(student.status)} {getStatusLabel(student.status)}
               </div>
             </div>
           ))}
-        </div>
+        </Panel>
 
-        {/* ALERTS PANEL */}
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-        }}>
-          <h3>🚨 Real-Time Alerts ({alerts.length})</h3>
-
+        {/* ALERTS */}
+        <Panel title={`🚨 Real-Time Alerts (${alerts.length})`}>
           {alerts.map(alert => (
             <div key={alert.id}
               style={{
-                padding: '16px',
-                marginTop: '12px',
+                padding: '14px',
+                marginBottom: '12px',
                 backgroundColor: '#fef3c7',
-                borderRadius: '12px',
-                borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`
+                borderRadius: '8px',
+                borderLeft: `5px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`
               }}>
               <strong>{getSeverityIcon(alert.severity)} {alert.student_name}</strong>
-              <div style={{ marginTop: '6px' }}>{alert.message}</div>
+              <div style={{ marginTop: '4px' }}>{alert.message}</div>
             </div>
           ))}
-        </div>
+        </Panel>
       </div>
 
       {/* STUDENT CAMERAS */}
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        padding: '24px'
-      }}>
-        <h3>📹 Live Student Cameras ({students.length})</h3>
-
+      <Panel title={`📹 Live Student Cameras (${students.length})`}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px',
-          marginTop: '16px'
+          gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+          gap: '16px'
         }}>
           {students.map(student => (
             <div key={student.id}
               style={{
-                border: `3px solid ${getStatusColor(student.status)}`,
-                borderRadius: '12px',
-                padding: '12px'
+                border: `2px solid ${getStatusColor(student.status)}`,
+                borderRadius: '8px',
+                padding: '10px'
               }}>
               {studentFrames[student.id] && (
                 <img
@@ -318,20 +286,50 @@ export default function TeacherPage() {
                   alt={student.name}
                   style={{
                     width: '100%',
-                    height: '200px',
+                    height: '180px',
                     objectFit: 'cover',
-                    borderRadius: '8px'
+                    borderRadius: '6px'
                   }}
                 />
               )}
-              <div style={{ marginTop: '10px', textAlign: 'center' }}>
+              <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 {student.name}
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </Panel>
 
+    </div>
+  );
+}
+
+/* ===== SMALL COMPONENTS ===== */
+
+function Panel({ title, children }) {
+  return (
+    <div style={{
+      backgroundColor: 'white',
+      borderRadius: '12px',
+      padding: '20px',
+      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    }}>
+      <h3 style={{ marginBottom: '16px' }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color = '#3b82f6' }) {
+  return (
+    <div style={{
+      backgroundColor: 'white',
+      padding: '20px',
+      borderRadius: '12px',
+      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    }}>
+      <div style={{ fontSize: '13px', marginBottom: '6px' }}>{label}</div>
+      <div style={{ fontSize: '28px', fontWeight: 'bold', color }}>{value}</div>
     </div>
   );
 }
