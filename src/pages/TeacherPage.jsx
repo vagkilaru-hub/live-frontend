@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WebSocketManager } from '../utils/websocket';
-import { getStatusColor, getStatusLabel, formatTimeAgoIST, formatTimeIST } from '../utils/detection';
+import { getStatusColor, getStatusLabel, formatTimeAgoIST } from '../utils/detection';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
@@ -12,6 +12,7 @@ const ALERT_SEVERITY_COLORS = {
 };
 
 export default function TeacherPage() {
+
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [studentFrames, setStudentFrames] = useState({});
@@ -19,54 +20,40 @@ export default function TeacherPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
-  const [lastMessage, setLastMessage] = useState('Waiting for messages...');
+  const [lastMessage, setLastMessage] = useState('Waiting...');
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
-  const MAX_ALERTS = 50;
 
-  /* ================== WEBSOCKET ================== */
+  /* ================= WEBSOCKET ================= */
 
   const handleWebSocketMessage = useCallback((message) => {
-    setLastMessage(`${message.type} - ${new Date().toLocaleTimeString()}`);
+    setLastMessage(message.type);
 
     switch (message.type) {
 
       case 'room_created':
         setRoomId(message.data.room_id);
-        setStudents(message.data.students || []);
         break;
 
       case 'student_join':
-        setStudents(prev => {
-          const exists = prev.some(s => s.id === message.data.student_id);
-          if (exists) return prev;
-          return [...prev, {
+        setStudents(prev => [
+          ...prev,
+          {
             id: message.data.student_id,
             name: message.data.student_name,
             status: 'attentive',
-            last_update: message.data.timestamp,
-            alerts_count: 0,
-          }];
-        });
-        break;
-
-      case 'student_leave':
-        setStudents(prev => prev.filter(s => s.id !== message.data.student_id));
-        setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
-        setStudentFrames(prev => {
-          const newFrames = { ...prev };
-          delete newFrames[message.data.student_id];
-          return newFrames;
-        });
+            last_update: message.data.timestamp
+          }
+        ]);
         break;
 
       case 'attention_update':
         setStudents(prev =>
-          prev.map(student =>
-            student.id === message.data.student_id
-              ? { ...student, status: message.data.status, last_update: message.data.timestamp }
-              : student
+          prev.map(s =>
+            s.id === message.data.student_id
+              ? { ...s, status: message.data.status }
+              : s
           )
         );
         break;
@@ -79,14 +66,10 @@ export default function TeacherPage() {
         break;
 
       case 'alert':
-        setAlerts(prev => {
-          const exists = prev.some(a => a.student_id === message.data.student_id);
-          if (exists) return prev;
-          return [{
-            id: `${message.data.student_id}-${Date.now()}`,
-            ...message.data
-          }, ...prev].slice(0, MAX_ALERTS);
-        });
+        setAlerts(prev => [{
+          id: `${message.data.student_id}-${Date.now()}`,
+          ...message.data
+        }, ...prev]);
         break;
 
       default:
@@ -95,22 +78,23 @@ export default function TeacherPage() {
   }, []);
 
   useEffect(() => {
-    const connectWebSocket = () => {
-      const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
-      wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
+    const connect = () => {
+      wsRef.current = new WebSocketManager(
+        `${WS_URL}/ws/teacher?name=Teacher`,
+        handleWebSocketMessage
+      );
 
       wsRef.current.connect()
         .then(() => setIsConnected(true))
         .catch(() => {
           setIsConnected(false);
-          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+          reconnectTimeoutRef.current = setTimeout(connect, 3000);
         });
     };
 
-    connectWebSocket();
+    connect();
 
     return () => {
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.disconnect();
     };
   }, [handleWebSocketMessage]);
@@ -118,21 +102,23 @@ export default function TeacherPage() {
   useEffect(() => {
     const total = students.length;
     const attentive = students.filter(s => s.status === 'attentive').length;
-    setStats({ total, attentive, needsAttention: total - attentive });
+    setStats({
+      total,
+      attentive,
+      needsAttention: total - attentive
+    });
   }, [students]);
 
-  const handleLeaveClass = () => {
-    if (window.confirm('End class for all students?')) {
-      if (wsRef.current) wsRef.current.disconnect();
-      navigate('/');
-    }
+  const handleLeave = () => {
+    if (wsRef.current) wsRef.current.disconnect();
+    navigate('/');
   };
 
   const getStatusIcon = (status) => ({
     attentive: '✓',
     looking_away: '👀',
     drowsy: '😴',
-    no_face: '❌',
+    no_face: '❌'
   }[status] || '○');
 
   const getSeverityIcon = (severity) => ({
@@ -141,27 +127,25 @@ export default function TeacherPage() {
     high: '🚨'
   }[severity] || 'ℹ️');
 
-  /* ================== UI ================== */
+  /* ================= UI ================= */
 
   return (
     <div style={{
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px',
+      padding: '20px'
     }}>
 
       {/* HEADER */}
       <div style={{
-        backgroundColor: 'white',
+        background: 'white',
         padding: '16px 24px',
-        marginBottom: '20px',
         borderRadius: '12px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+        marginBottom: '20px',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
+        justifyContent: 'space-between'
       }}>
-        <h1>Live Feedback System</h1>
+        <h2>Live Feedback System</h2>
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <div style={{
@@ -169,18 +153,17 @@ export default function TeacherPage() {
             backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
             borderRadius: '16px'
           }}>
-            ● {isConnected ? 'Connected' : 'Reconnecting...'}
+            ● {isConnected ? 'Connected' : 'Reconnecting'}
           </div>
 
           <button
-            onClick={handleLeaveClass}
+            onClick={handleLeave}
             style={{
               padding: '8px 16px',
-              backgroundColor: '#ef4444',
+              background: '#ef4444',
               color: 'white',
               border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
+              borderRadius: '8px'
             }}>
             Leave Class
           </button>
@@ -189,38 +172,34 @@ export default function TeacherPage() {
 
       {/* STATS */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        display: 'flex',
         gap: '16px',
         marginBottom: '20px'
       }}>
-        <StatCard label="Total Students" value={stats.total} />
-        <StatCard label="Attentive" value={stats.attentive} color="#22c55e" />
-        <StatCard label="Needs Attention" value={stats.needsAttention} color="#f59e0b" />
-        <StatCard label="Active Alerts" value={alerts.length} color="#ef4444" />
+        <Stat label="Total Students" value={stats.total} />
+        <Stat label="Attentive" value={stats.attentive} color="#22c55e" />
+        <Stat label="Needs Attention" value={stats.needsAttention} color="#f59e0b" />
+        <Stat label="Active Alerts" value={alerts.length} color="#ef4444" />
       </div>
 
       {/* DEBUG */}
       <div style={{
-        backgroundColor: '#1f2937',
+        background: '#1f2937',
         color: '#10b981',
-        padding: '12px',
-        borderRadius: '12px',
+        padding: '10px',
+        borderRadius: '10px',
         marginBottom: '20px',
         fontFamily: 'monospace',
-        fontSize: '12px',
+        fontSize: '12px'
       }}>
-        Alerts: {alerts.length} | Students: {students.length}
-        <br />
-        Last: {lastMessage}
+        Alerts: {alerts.length} | Students: {students.length} | Last: {lastMessage}
       </div>
 
       {/* SIDE BY SIDE */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        display: 'flex',
         gap: '20px',
-        marginBottom: '20px',
+        marginBottom: '20px'
       }}>
 
         {/* STUDENTS */}
@@ -255,12 +234,16 @@ export default function TeacherPage() {
               style={{
                 padding: '14px',
                 marginBottom: '12px',
-                backgroundColor: '#fef3c7',
+                background: '#fef3c7',
                 borderRadius: '8px',
                 borderLeft: `5px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`
               }}>
-              <strong>{getSeverityIcon(alert.severity)} {alert.student_name}</strong>
-              <div style={{ marginTop: '4px' }}>{alert.message}</div>
+              <strong>
+                {getSeverityIcon(alert.severity)} {alert.student_name}
+              </strong>
+              <div style={{ marginTop: '4px' }}>
+                {alert.message}
+              </div>
             </div>
           ))}
         </Panel>
@@ -304,15 +287,16 @@ export default function TeacherPage() {
   );
 }
 
-/* ===== SMALL COMPONENTS ===== */
+/* ===== COMPONENTS ===== */
 
 function Panel({ title, children }) {
   return (
     <div style={{
-      backgroundColor: 'white',
-      borderRadius: '12px',
+      flex: 1,
+      background: 'white',
       padding: '20px',
-      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+      borderRadius: '12px',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
     }}>
       <h3 style={{ marginBottom: '16px' }}>{title}</h3>
       {children}
@@ -320,16 +304,18 @@ function Panel({ title, children }) {
   );
 }
 
-function StatCard({ label, value, color = '#3b82f6' }) {
+function Stat({ label, value, color = '#3b82f6' }) {
   return (
     <div style={{
-      backgroundColor: 'white',
-      padding: '20px',
-      borderRadius: '12px',
-      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+      flex: 1,
+      background: 'white',
+      padding: '16px',
+      borderRadius: '10px'
     }}>
-      <div style={{ fontSize: '13px', marginBottom: '6px' }}>{label}</div>
-      <div style={{ fontSize: '28px', fontWeight: 'bold', color }}>{value}</div>
+      <div style={{ fontSize: '13px' }}>{label}</div>
+      <div style={{ fontSize: '26px', fontWeight: 'bold', color }}>
+        {value}
+      </div>
     </div>
   );
 }
