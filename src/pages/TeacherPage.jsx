@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WebSocketManager } from '../utils/websocket';
 import { getStatusColor, getStatusLabel, formatTimeAgoIST, formatTimeIST } from '../utils/detection';
-import TeacherCamera from '../components/TeacherCamera';
-import AudioManager from '../components/AudioManager';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
@@ -20,28 +18,18 @@ export default function TeacherPage() {
   const [alerts, setAlerts] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [roomId, setRoomId] = useState(null);
-  const [showMyCamera, setShowMyCamera] = useState(false);
   const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [showChat, setShowChat] = useState(false);
-  const [audioStatus, setAudioStatus] = useState({ enabled: false, muted: true, connected: false });
-  const [lastMessage, setLastMessage] = useState('Waiting for messages...');
 
   const wsRef = useRef(null);
   const chatEndRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const MAX_ALERTS = 50;
 
-  // ✅ TEACHER CAMERA STREAMING REFS
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const frameIntervalRef = useRef(null);
-
   const handleWebSocketMessage = useCallback((message) => {
     console.log('📨 Teacher received:', message.type);
-    setLastMessage(`${message.type} - ${new Date().toLocaleTimeString()}`);
 
     switch (message.type) {
       case 'room_created':
@@ -144,82 +132,6 @@ export default function TeacherPage() {
     }
   }, []);
 
-  // ✅ TEACHER CAMERA AUTO-START
-  useEffect(() => {
-    if (roomId && !streamRef.current) {
-      console.log('⏳ Room created, starting teacher camera in 1.5s...');
-      setTimeout(() => {
-        startTeacherCamera();
-      }, 1500);
-    }
-  }, [roomId]);
-
-  const startTeacherCamera = async () => {
-    try {
-      console.log('📹 Starting teacher camera for streaming...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false
-      });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        console.log('✅ Teacher camera started, capturing frames...');
-
-        // Start sending frames every 100ms (10 FPS)
-        frameIntervalRef.current = setInterval(() => {
-          captureAndSendFrame();
-        }, 100);
-      }
-    } catch (error) {
-      console.error('❌ Camera error:', error);
-      alert('Could not access camera: ' + error.message);
-    }
-  };
-
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !wsRef.current?.isConnected()) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      try {
-        const frameData = canvas.toDataURL('image/jpeg', 0.6);
-        wsRef.current.send({
-          type: 'teacher_camera_frame',
-          frame: frameData
-        });
-      } catch (err) {
-        console.error('Frame capture error:', err);
-      }
-    }
-  };
-
-  const stopTeacherCamera = () => {
-    console.log('🛑 Stopping teacher camera...');
-    
-    if (frameIntervalRef.current) {
-      clearInterval(frameIntervalRef.current);
-      frameIntervalRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-  };
-
   useEffect(() => {
     let mounted = true;
 
@@ -253,19 +165,11 @@ export default function TeacherPage() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      stopTeacherCamera(); // ✅ Stop camera on unmount
       if (wsRef.current) {
         wsRef.current.disconnect();
       }
     };
   }, [handleWebSocketMessage]);
-
-  useEffect(() => {
-    console.log('🔄 ALERTS STATE UPDATED:', alerts.length, 'alerts');
-    alerts.forEach((alert, index) => {
-      console.log(`  ${index + 1}. ${alert.student_name} - ${alert.alert_type}`);
-    });
-  }, [alerts]);
 
   useEffect(() => {
     const total = students.length;
@@ -298,7 +202,6 @@ export default function TeacherPage() {
 
   const handleLeaveClass = () => {
     if (window.confirm('End class for all students?')) {
-      stopTeacherCamera();
       if (wsRef.current) wsRef.current.disconnect();
       navigate('/');
     }
@@ -322,81 +225,75 @@ export default function TeacherPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       padding: '20px',
     }}>
       {/* Header */}
       <div style={{
         backgroundColor: 'white',
-        padding: '20px 24px',
+        padding: '16px 24px',
         marginBottom: '20px',
-        borderRadius: '16px',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+        borderRadius: '12px',
+        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: roomId ? '16px' : '0',
           flexWrap: 'wrap',
           gap: '12px',
         }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
+            <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', margin: 0 }}>
               Live Feedback System
             </h1>
-            <button
-              onClick={() => navigate('/')}
-              style={{
-                marginTop: '8px',
-                padding: '6px 12px',
-                backgroundColor: '#f3f4f6',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              ← Back to Home
-            </button>
+            <p style={{ fontSize: '13px', color: '#6b7280', margin: '4px 0 0 0' }}>
+              Teacher Dashboard
+            </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{
-              padding: '8px 16px',
+              padding: '6px 14px',
               backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
-              borderRadius: '20px',
-              fontSize: '14px',
+              borderRadius: '16px',
+              fontSize: '13px',
               fontWeight: '500',
+              color: isConnected ? '#166534' : '#991b1b',
             }}>
               ● {isConnected ? 'Connected' : 'Reconnecting...'}
             </div>
 
-            <button
-              onClick={() => setShowMyCamera(true)}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#8b5cf6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
+            {roomId && (
+              <div style={{
+                padding: '6px 14px',
+                backgroundColor: '#eff6ff',
+                borderRadius: '16px',
+                fontSize: '13px',
                 fontWeight: '600',
-              }}
-            >
-              📹 My Camera
-            </button>
-
-            <AudioManager
-              wsManager={wsRef.current}
-              userId="teacher"
-              userType="teacher"
-              onStatusChange={(status) => {
-                setAudioStatus(status);
-                console.log('Teacher audio:', status);
-              }}
-            />
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                Room Code: <span style={{ fontSize: '16px', letterSpacing: '2px', fontFamily: 'monospace' }}>{roomId}</span>
+                <button
+                  onClick={copyRoomCode}
+                  style={{
+                    padding: '2px 8px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => setShowChat(!showChat)}
@@ -407,7 +304,7 @@ export default function TeacherPage() {
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: '600',
               }}
             >
@@ -423,7 +320,7 @@ export default function TeacherPage() {
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: '600',
               }}
             >
@@ -431,184 +328,101 @@ export default function TeacherPage() {
             </button>
           </div>
         </div>
+      </div>
 
-        {roomId ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '20px 24px',
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-            borderRadius: '12px',
-            border: '3px solid #3b82f6',
-            marginBottom: '16px',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}>
-            <div>
-              <div style={{
-                fontSize: '13px',
-                color: '#1e40af',
-                marginBottom: '8px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-              }}>
-                📋 ROOM CODE - SHARE WITH STUDENTS
-              </div>
-              <div style={{
-                fontSize: '42px',
-                fontWeight: 'bold',
-                color: '#1e3a8a',
-                letterSpacing: '8px',
-                fontFamily: 'monospace',
-              }}>
-                {roomId}
-              </div>
-            </div>
-            <button
-              onClick={copyRoomCode}
-              style={{
-                padding: '14px 28px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '15px',
-                fontWeight: '600',
-                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
-              }}
-            >
-              📋 Copy Code
-            </button>
+      {/* Stats Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px',
+        marginBottom: '20px',
+      }}>
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+        }}>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px', fontWeight: '500' }}>
+            Total Students
           </div>
-        ) : (
-          <div style={{
-            padding: '16px',
-            backgroundColor: '#fef3c7',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            fontSize: '14px',
-            color: '#92400e',
-            textAlign: 'center',
-            fontWeight: '500',
-          }}>
-            ⏳ Generating room code...
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#3b82f6' }}>
+            {stats.total}
           </div>
-        )}
+        </div>
 
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
         }}>
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-            borderRadius: '10px',
-            border: '2px solid #3b82f6',
-          }}>
-            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '600' }}>
-              Total Students
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e3a8a' }}>
-              {stats.total}
-            </div>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px', fontWeight: '500' }}>
+            Attentive
           </div>
-
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)',
-            borderRadius: '10px',
-            border: '2px solid #22c55e',
-          }}>
-            <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px', fontWeight: '600' }}>
-              Attentive
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#14532d' }}>
-              {stats.attentive}
-            </div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#22c55e' }}>
+            {stats.attentive}
           </div>
+        </div>
 
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
-            borderRadius: '10px',
-            border: '2px solid #ef4444',
-          }}>
-            <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '4px', fontWeight: '600' }}>
-              Needs Attention
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7f1d1d' }}>
-              {stats.needsAttention}
-            </div>
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+        }}>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px', fontWeight: '500' }}>
+            Needs Attention
           </div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#f59e0b' }}>
+            {stats.needsAttention}
+          </div>
+        </div>
 
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-            borderRadius: '10px',
-            border: '2px solid #f59e0b',
-          }}>
-            <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>
-              Active Alerts
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#78350f' }}>
-              {alerts.length}
-            </div>
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+        }}>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px', fontWeight: '500' }}>
+            Active Alerts
+          </div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#ef4444' }}>
+            {alerts.length}
           </div>
         </div>
       </div>
 
-      <div style={{
-        backgroundColor: '#1f2937',
-        color: '#10b981',
-        padding: '12px 24px',
-        marginBottom: '20px',
-        borderRadius: '12px',
-        fontFamily: 'monospace',
-        fontSize: '12px',
-      }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#60a5fa' }}>
-          🔍 LIVE DEBUG:
-        </div>
-        <div style={{ color: '#a3e635' }}>
-          Alerts: {alerts.length} | Students: {students.length} | Camera: {streamRef.current ? '✅ Streaming' : '❌ Off'}
-        </div>
-        <div style={{ color: '#fbbf24', marginTop: '4px' }}>
-          Last: {lastMessage}
-        </div>
-      </div>
-
+      {/* Chat Sidebar */}
       {showChat && (
         <div style={{
           position: 'fixed',
           top: '20px',
           right: '20px',
-          width: '350px',
+          width: '320px',
           height: 'calc(100vh - 40px)',
           backgroundColor: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+          borderRadius: '12px',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 1000,
         }}>
           <div style={{
-            padding: '20px',
-            borderBottom: '2px solid #e5e7eb',
+            padding: '16px',
+            borderBottom: '1px solid #e5e7eb',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
           }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', margin: 0 }}>
               💬 Chat
             </h3>
             <button
               onClick={() => setShowChat(false)}
               style={{
-                padding: '6px 12px',
+                padding: '4px 10px',
                 backgroundColor: '#f3f4f6',
                 border: 'none',
                 borderRadius: '6px',
@@ -623,7 +437,7 @@ export default function TeacherPage() {
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px', backgroundColor: '#f9fafb' }}>
             {messages.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px', fontSize: '14px' }}>
+              <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px', fontSize: '13px' }}>
                 No messages yet
               </div>
             ) : (
@@ -631,18 +445,18 @@ export default function TeacherPage() {
                 <div
                   key={i}
                   style={{
-                    marginBottom: '12px',
-                    padding: '12px',
+                    marginBottom: '10px',
+                    padding: '10px',
                     backgroundColor: msg.user_type === 'teacher' ? '#eff6ff' : 'white',
                     borderRadius: '8px',
-                    border: `2px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}`,
+                    border: `1px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}`,
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>
                     {msg.user_name}{msg.user_type === 'teacher' && ' 👨‍🏫'}
                   </div>
-                  <div style={{ fontSize: '14px', color: '#374151' }}>{msg.message}</div>
-                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                  <div style={{ fontSize: '13px', color: '#374151' }}>{msg.message}</div>
+                  <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>
                     {formatTimeIST(msg.timestamp)}
                   </div>
                 </div>
@@ -651,19 +465,19 @@ export default function TeacherPage() {
             <div ref={chatEndRef} />
           </div>
 
-          <div style={{ padding: '16px', borderTop: '2px solid #e5e7eb', display: 'flex', gap: '8px' }}>
+          <div style={{ padding: '16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px' }}>
             <input
               type="text"
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type..."
+              placeholder="Type a message..."
               style={{
                 flex: 1,
-                padding: '12px',
-                border: '2px solid #e5e7eb',
+                padding: '10px',
+                border: '1px solid #e5e7eb',
                 borderRadius: '8px',
-                fontSize: '14px',
+                fontSize: '13px',
                 outline: 'none',
               }}
             />
@@ -671,12 +485,12 @@ export default function TeacherPage() {
               onClick={sendMessage}
               disabled={!messageInput.trim()}
               style={{
-                padding: '12px 20px',
-                background: messageInput.trim() ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : '#d1d5db',
+                padding: '10px 18px',
+                background: messageInput.trim() ? '#3b82f6' : '#d1d5db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: '600',
                 cursor: messageInput.trim() ? 'pointer' : 'not-allowed',
               }}
@@ -687,20 +501,22 @@ export default function TeacherPage() {
         </div>
       )}
 
+      {/* Side by Side: Students (left) and Real-Time Alerts (right) */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '20px',
         marginBottom: '20px',
       }}>
+        {/* Students Section - LEFT */}
         <div style={{
           backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+          borderRadius: '12px',
+          padding: '20px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
         }}>
           <h3 style={{
-            fontSize: '18px',
+            fontSize: '16px',
             fontWeight: '600',
             color: '#111827',
             marginBottom: '16px',
@@ -716,38 +532,39 @@ export default function TeacherPage() {
               justifyContent: 'center',
               height: '400px',
               color: '#9ca3af',
-              fontSize: '14px',
+              fontSize: '13px',
             }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-              <div>No students connected yet</div>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+              <div>No students joined yet</div>
+              <div style={{ fontSize: '11px', marginTop: '4px' }}>Share the room code with students</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '600px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '500px', overflowY: 'auto' }}>
               {students.map((student) => (
                 <div
                   key={student.id}
                   style={{
-                    padding: '16px',
+                    padding: '14px',
                     backgroundColor: '#fafafa',
-                    borderRadius: '12px',
-                    border: `3px solid ${getStatusColor(student.status)}`,
+                    borderRadius: '8px',
+                    border: `2px solid ${getStatusColor(student.status)}`,
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>
                         {student.name}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                      <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>
                         {formatTimeAgoIST(student.last_update)}
                       </div>
                     </div>
                     <div style={{
-                      padding: '8px 16px',
+                      padding: '6px 12px',
                       backgroundColor: getStatusColor(student.status),
                       color: 'white',
-                      borderRadius: '12px',
-                      fontSize: '13px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
                       fontWeight: '600',
                     }}>
                       {getStatusIcon(student.status)} {getStatusLabel(student.status)}
@@ -759,11 +576,12 @@ export default function TeacherPage() {
           )}
         </div>
 
+        {/* Real-Time Alerts Section - RIGHT */}
         <div style={{
           backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+          borderRadius: '12px',
+          padding: '20px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
         }}>
           <div style={{
             display: 'flex',
@@ -772,20 +590,22 @@ export default function TeacherPage() {
             marginBottom: '16px',
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#111827',
               margin: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}>
               🚨 Real-Time Alerts
               {alerts.length > 0 && (
                 <span style={{
-                  marginLeft: '8px',
-                  padding: '4px 12px',
+                  padding: '2px 10px',
                   backgroundColor: '#ef4444',
                   color: 'white',
                   borderRadius: '12px',
-                  fontSize: '14px',
+                  fontSize: '12px',
                 }}>
                   {alerts.length}
                 </span>
@@ -795,13 +615,13 @@ export default function TeacherPage() {
               <button
                 onClick={clearAlerts}
                 style={{
-                  padding: '8px 16px',
+                  padding: '6px 14px',
                   backgroundColor: '#ef4444',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: '600',
                 }}
               >
@@ -811,11 +631,11 @@ export default function TeacherPage() {
           </div>
 
           <div style={{
-            maxHeight: '600px',
+            maxHeight: '500px',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px'
+            gap: '10px'
           }}>
             {alerts.length === 0 ? (
               <div style={{
@@ -825,41 +645,42 @@ export default function TeacherPage() {
                 justifyContent: 'center',
                 height: '400px',
                 color: '#9ca3af',
-                fontSize: '14px',
+                fontSize: '13px',
               }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
+                <div style={{ fontSize: '36px', marginBottom: '8px' }}>✓</div>
                 <div>No active alerts</div>
+                <div style={{ fontSize: '11px', marginTop: '4px' }}>All students are attentive</div>
               </div>
             ) : (
               alerts.map((alert) => (
                 <div
                   key={alert.id}
                   style={{
-                    padding: '16px',
+                    padding: '12px',
                     backgroundColor: '#fef3c7',
                     border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                    borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                    borderRadius: '12px',
+                    borderLeft: `4px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
+                    borderRadius: '8px',
                   }}
                 >
                   <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    marginBottom: '8px',
+                    marginBottom: '6px',
                   }}>
                     <div style={{
-                      fontSize: '16px',
+                      fontSize: '14px',
                       fontWeight: '600',
                       color: '#111827',
                     }}>
                       {getSeverityIcon(alert.severity)} {alert.student_name}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                    <div style={{ fontSize: '10px', color: '#9ca3af' }}>
                       {formatTimeAgoIST(alert.timestamp)}
                     </div>
                   </div>
                   <div style={{
-                    fontSize: '14px',
+                    fontSize: '13px',
                     color: '#4b5563',
                   }}>
                     {alert.message}
@@ -871,13 +692,14 @@ export default function TeacherPage() {
         </div>
       </div>
 
+      {/* Live Student Cameras - BOTTOM */}
       <div style={{
         backgroundColor: 'white',
-        borderRadius: '16px',
-        padding: '24px',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
       }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
           📹 Live Student Cameras ({students.length})
         </h3>
 
@@ -887,27 +709,28 @@ export default function TeacherPage() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '300px',
+            height: '250px',
             color: '#9ca3af',
-            fontSize: '14px',
+            fontSize: '13px',
           }}>
-            <div style={{ fontSize: '64px', marginBottom: '16px' }}>📹</div>
-            <div>No students connected</div>
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>📹</div>
+            <div>No camera feeds yet</div>
+            <div style={{ fontSize: '11px', marginTop: '4px' }}>Waiting for students to join...</div>
           </div>
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
             gap: '16px',
           }}>
             {students.map((student) => (
               <div
                 key={student.id}
                 style={{
-                  border: `3px solid ${getStatusColor(student.status)}`,
-                  borderRadius: '12px',
+                  border: `2px solid ${getStatusColor(student.status)}`,
+                  borderRadius: '10px',
                   backgroundColor: '#fafafa',
-                  padding: '12px',
+                  padding: '10px',
                 }}
               >
                 {studentFrames[student.id] ? (
@@ -917,21 +740,21 @@ export default function TeacherPage() {
                       alt={student.name}
                       style={{
                         width: '100%',
-                        height: '200px',
+                        height: '180px',
                         objectFit: 'cover',
                         borderRadius: '8px',
-                        marginBottom: '12px',
+                        marginBottom: '10px',
                       }}
                     />
                     <div style={{
                       position: 'absolute',
                       top: '8px',
                       left: '8px',
-                      padding: '4px 10px',
+                      padding: '3px 8px',
                       backgroundColor: '#22c55e',
                       color: 'white',
-                      borderRadius: '8px',
-                      fontSize: '11px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
                       fontWeight: '600',
                     }}>
                       ● LIVE
@@ -940,25 +763,25 @@ export default function TeacherPage() {
                 ) : (
                   <div style={{
                     width: '100%',
-                    height: '200px',
+                    height: '180px',
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     borderRadius: '8px',
-                    marginBottom: '12px',
+                    marginBottom: '10px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'white',
                   }}>
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '40px', marginBottom: '8px' }}>📹</div>
-                      <div style={{ fontSize: '13px' }}>Waiting...</div>
+                      <div style={{ fontSize: '32px', marginBottom: '6px' }}>📹</div>
+                      <div style={{ fontSize: '12px' }}>Waiting for camera...</div>
                     </div>
                   </div>
                 )}
 
                 <div style={{
                   fontWeight: '600',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   color: '#111827',
                   marginBottom: '8px',
                   textAlign: 'center',
@@ -967,11 +790,11 @@ export default function TeacherPage() {
                 </div>
 
                 <div style={{
-                  padding: '6px 12px',
+                  padding: '5px 10px',
                   backgroundColor: getStatusColor(student.status),
                   color: 'white',
-                  borderRadius: '8px',
-                  fontSize: '12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   textAlign: 'center',
                 }}>
@@ -981,34 +804,6 @@ export default function TeacherPage() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* ✅ TEACHER CAMERA MODAL - BOTTOM LEFT CORNER */}
-      {showMyCamera && (
-        <div style={{
-          position: 'fixed',
-          bottom: '30px',
-          left: '30px',
-          zIndex: 999,
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
-        }}>
-          <TeacherCamera 
-            onClose={() => setShowMyCamera(false)} 
-            wsManager={wsRef.current} 
-          />
-        </div>
-      )}
-
-      {/* ✅ HIDDEN VIDEO & CANVAS FOR STREAMING */}
-      <div style={{ display: 'none' }}>
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          onLoadedMetadata={() => console.log('✅ Video loaded for streaming')}
-        />
-        <canvas ref={canvasRef} />
       </div>
     </div>
   );
